@@ -58,9 +58,3 @@ To maintain security and prevent players from editing chat messages they don't o
 
 ---
 
-## Installation
-
-*(Include your standard manifest URL / installation instructions here once published)*
-
-**Compatibility:** * Foundry VTT Version 11+
-* Pathfinder 2e System
