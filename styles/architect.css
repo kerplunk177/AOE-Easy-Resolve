@@ -1,0 +1,161 @@
+.npc-architect {
+    background: url("../../../ui/parchment.jpg") repeat;
+    color: #191813;
+    font-family: "Signika", sans-serif;
+}
+
+.npc-architect .window-content {
+    overflow-y: auto; 
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.architect-header {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 10px;
+    border-bottom: 2px solid #4b4a44;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.architect-header img {
+    border: 2px solid #4b4a44;
+    border-radius: 5px;
+    background: #000;
+}
+
+.architect-header h1 {
+    border: none;
+    margin: 0;
+    flex-grow: 1;
+}
+
+.architect-nav {
+    display: flex;
+    background: rgba(0, 0, 0, 0.05);
+    border-bottom: 1px solid #7a7971;
+}
+
+.architect-nav a.item {
+    padding: 10px 20px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #4b4a44;
+    border-right: 1px solid #7a7971;
+}
+
+.architect-nav a.item:hover {
+    background: rgba(0, 0, 0, 0.1);
+    text-shadow: 0 0 5px white;
+}
+
+.architect-nav a.item.active {
+    background: rgba(0, 0, 0, 0.2);
+    color: #000;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+}
+
+
+.architect-body {
+    padding: 15px;
+
+    flex-grow: 1;
+    overflow-y: auto; 
+}
+
+
+.grid-2col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.stat-box {
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid #7a7971;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+
+input[type="range"].affiliation-slider {
+    width: 100%;
+    accent-color: #4b4a44; 
+}
+
+.aff-badge.allied { color: #2e8b57; background: #e0f8e0; border: 1px solid #2e8b57; } 
+.aff-badge.friendly { color: #4682b4; background: #e6f2ff; border: 1px solid #4682b4; } 
+.aff-badge.neutral { color: #555; background: #eee; border: 1px solid #ccc; }
+.aff-badge.dislike { color: #d2691e; background: #ffe6cc; border: 1px solid #d2691e; } 
+.aff-badge.enemy { color: #8b0000; background: #ffcccc; border: 1px solid #8b0000; } 
+
+
+.aff-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.public-sheet-form {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 15px;
+    background: #1c1b1a;
+    color: #e0e0e0;
+    box-sizing: border-box;
+}
+
+
+.sheet-layout {
+    flex: 1;
+    display: flex;
+    gap: 20px;
+    overflow: hidden; 
+    height: 100%;
+}
+
+.sheet-sidebar {
+    flex: 0 0 240px; 
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-right: 2px solid #5a5954;
+    padding-right: 20px;
+    overflow-y: auto; 
+}
+
+
+.sheet-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; 
+}
+
+
+.party-notes-wrapper {
+    flex: 1; 
+    display: flex;
+    flex-direction: column;
+    min-height: 200px; 
+    overflow: hidden; 
+}
+
+
+.notes-feed {
+    flex: 1; 
+    overflow-y: auto; 
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding-right: 5px;
+    scrollbar-width: thin;
+    scrollbar-color: #5a5954 rgba(0,0,0,0.1);
+}

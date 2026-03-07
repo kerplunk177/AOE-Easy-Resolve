@@ -1,0 +1,293 @@
+<div class="dossier-container {{#if isAnimated}}dossier-animated-bg{{/if}}">
+    
+    <div class="dossier-controls">
+    <div class="control-left">
+        <input type="text" class="dossier-search" placeholder="Search names or lore...">
+        <select class="dossier-sort">
+            <option value="name" {{#if (eq currentSort "name")}}selected{{/if}}>Sort by Name (A-Z)</option>
+            <option value="affiliation" {{#if (eq currentSort "affiliation")}}selected{{/if}}>Sort by Affiliation</option>
+        </select>
+        
+        {{#if isGM}}
+        <select class="campaign-filter dossier-sort">
+            {{#each campaignOptions}}
+                <option value="{{this.name}}" {{#if this.isSelected}}selected{{/if}}>{{this.name}}</option>
+            {{/each}}
+        </select>
+        {{/if}}
+    </div>
+        
+    {{#if isGM}}
+    <div class="control-right">
+        <button class="manage-factions-btn">
+            <i class="fas fa-list-ol"></i> Manage Factions
+        </button>
+    </div>
+    {{/if}}
+</div>
+
+    {{#each factionList}}
+        <div class="faction-group">
+            <div class="faction-header">
+                <h2 class="faction-toggle" style="color: {{color}}; text-shadow: 1px 1px 2px black;">
+    <i class="fas fa-chevron-down"></i> {{name}}
+</h2>
+                <hr>
+            </div>
+
+            <div class="dossier-grid">
+                {{#each cards}}
+                <div class="dossier-card" data-id="{{id}}" draggable="true">
+                    <div class="card-image">
+                        <img src="{{img}}">
+                    </div>
+                    <div class="card-content">
+                        <h3 class="card-title">{{name}}</h3>
+                        <div class="card-meta">
+                            {{#unless isLocation}}
+                            <span class="aff-badge {{affClass}}">{{affiliation}}</span>
+                            {{/unless}}
+                        </div>
+                        <p class="card-blurb"><em>{{blurb}}</em></p>
+                    </div>
+                </div>
+                {{/each}}
+            </div>
+        </div>
+    {{else}}
+        <div class="empty-state">
+            <p>No NPCs tracked.</p> 
+            <p><small>Open an NPC sheet -> Architect -> Check "Track in Hub".</small></p>
+        </div>
+    {{/each}}
+</div>
+
+<style>
+    .dossier-container {
+        padding: 20px;
+        overflow-y: auto;
+        height: 100%;
+        background: #1c1b1a; 
+        position: relative; /* Added anchor for the animation overlay */
+    }
+
+   @keyframes rollingFog {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    .dossier-container.dossier-animated-bg {
+        background: linear-gradient(110deg, #080808, #1c1b1a, #050505, #1a1918, #0a0a0a) !important;
+        background-size: 400% 400% !important;
+        animation: rollingFog 30s ease-in-out infinite !important;
+    }
+
+    .dossier-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #5a5954;
+    }
+    
+    .control-left {
+        display: flex;
+        gap: 10px;
+        flex: 1;
+    }
+
+    .dossier-search {
+        flex: 1;
+        max-width: 300px;
+        padding: 5px 10px;
+        background: rgba(255,255,255,0.9);
+        border: 1px solid #4b4a44;
+    }
+
+    .dossier-sort {
+        padding: 5px;
+        background: rgba(255,255,255,0.9);
+        border: 1px solid #4b4a44;
+    }
+
+    .manage-factions-btn {
+        width: auto;
+        padding: 5px 15px;
+        background: rgba(255,255,255,0.9);
+        border: 1px solid #4b4a44;
+    }
+
+    .faction-group {
+        margin-bottom: 30px;
+    }
+
+    .faction-header {
+        width: 100%;
+        margin-bottom: 15px;
+    }
+    
+    .faction-toggle {
+        border: none;
+        margin: 0;
+        font-family: "Modesto Condensed", "Palatino Linotype", serif;
+        font-size: 1.8em;
+        color: #e0e0e0;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        cursor: pointer;
+        user-select: none;
+    }
+    
+    .faction-toggle:hover {
+        color: #fff;
+        text-shadow: 0 0 8px rgba(255,255,255,0.3);
+    }
+    
+    .faction-toggle i {
+        font-size: 0.7em;
+        vertical-align: middle;
+        margin-right: 5px;
+        color: #888;
+    }
+
+    .faction-header hr {
+        border: 0;
+        height: 2px;
+        background: #5a5954; 
+        margin-top: 5px;
+    }
+
+    .dossier-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    .hidden-by-search {
+        display: none !important;
+    }
+
+    .dossier-card {
+        flex: 0 0 220px;       
+        width: 220px;          
+        height: 380px;
+        background: rgba(255,255,255,0.95);
+        border: 1px solid #7a7971;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.3); 
+    }
+
+    .dossier-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.6);
+        border-color: #a8a69d;
+    }
+
+    .card-image {
+        height: 220px; 
+        background: #111;
+        border-bottom: 2px solid #4b4a44;
+        overflow: hidden;
+        display: flex;      
+        align-items: center; 
+        justify-content: center;
+    }
+
+    .card-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain; 
+        border: none;
+    }
+
+    .card-content {
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        flex-grow: 1;
+    }
+
+    .card-title {
+        margin: 0 0 8px 0;
+        font-size: 1.1em;
+        font-weight: bold;
+        border-bottom: 1px solid #ccc;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-align: center;
+        color: #111;
+    }
+
+    .card-meta {
+        display: block; 
+        width: 100%;
+        margin-bottom: 10px;
+    }
+
+    .aff-badge.allied { color: #2e8b57; background: #e0f8e0; border: 1px solid #2e8b57; }
+    .aff-badge.friendly { color: #4682b4; background: #e6f2ff; border: 1px solid #4682b4; }
+    .aff-badge.neutral { color: #555; background: #eee; border: 1px solid #ccc; }
+    .aff-badge.dislike { color: #d2691e; background: #ffe6cc; border: 1px solid #d2691e; }
+    .aff-badge.enemy { color: #8b0000; background: #ffcccc; border: 1px solid #8b0000; }
+    .aff-badge.unknown { color: #555; background: #dbdbdb; border: 1px dashed #777; }
+
+    .aff-badge {
+        display: block;
+        width: 100%;
+        text-align: center;
+        padding: 4px 0;
+        border-radius: 4px;
+        font-size: 0.75em;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .card-blurb {
+        font-size: 0.85em;
+        color: #333;
+        margin: 0;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 4; 
+        -webkit-box-orient: vertical;
+        line-height: 1.3em;
+        text-align: center;
+        font-style: italic;
+    }
+
+    .empty-state {
+        width: 100%;
+        text-align: center;
+        margin-top: 50px;
+        color: #aaa; 
+    }
+
+    .dossier-dark-dialog.window-app .window-content {
+        background: #1c1b1a !important;
+        background-image: none !important; 
+        color: #e0e0e0;
+        border: 1px solid #4b4a44;
+    }
+    .dossier-dark-dialog .dialog-buttons button {
+        background: rgba(255,255,255,0.1) !important;
+        color: #e0e0e0 !important;
+        border: 1px solid #5a5954 !important;
+        text-shadow: none !important;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+    .dossier-dark-dialog .dialog-buttons button:hover {
+        background: rgba(255,255,255,0.2) !important;
+        color: #fff !important;
+        box-shadow: 0 0 5px rgba(255,255,255,0.2) !important;
+    }
+</style>
