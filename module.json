@@ -1,16 +1,26 @@
 {
-  "name": "pf2e-npc-architect",
-  "title": "PF2e NPC Architect",
-  "description": "Dynamic NPC scaling and Dossier management.",
-  "version": "1.6.1",
-  "Author": "Sean Wright",
-  "id": "pf2e-npc-architect",
+  "id": "aoe-easy-resolve",
+  "title": "AoE Easy Resolve",
+  "description": "Automates targeted saving throws and damage application from measured templates for PF2e and SF2e.",
+  "version": "1.1",
+  "author": "Sean Wright",
+
+
   "compatibility": {
     "minimum": "13",
     "verified": "13"
   },
-  "esmodules": ["scripts/main.js"],
-  "styles": ["styles/architect.css"],
-  "manifest": "https://raw.githubusercontent.com/kerplunk177/PF2E-NPC-Architect-and-Hub/main/module.json",
-  "download": "https://github.com/kerplunk177/PF2E-NPC-Architect-and-Hub/releases/download/1.6.1/module.zip"
+ 
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/module.css"
+  ],
+  "templates": [
+    "modules/aoe-easy-resolve/templates/chat-card.hbs",
+    "modules/aoe-easy-resolve/templates/item-config.hbs"
+  ],
+    "manifest": "https://github.com/kerplunk177/AOE-Easy-Resolve/releases/main/module.json",
+  "download": "https://github.com/kerplunk177/AOE-Easy-Resolve/releases/download/1.1/module.zip"
 }
