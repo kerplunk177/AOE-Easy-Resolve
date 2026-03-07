@@ -1,0 +1,82 @@
+<fieldset>
+  <legend>AoE Easy Resolve Configuration</legend>
+
+  <div class="form-group">
+    <label>Ignore AoE Automation?</label>
+    <div class="form-fields">
+      <input type="checkbox" name="flags.aoe-easy-resolve.ignoreAoE" {{checked ignoreAoE}}>
+    </div>
+    <p class="notes">Check this to completely disable the AoE save card for this item.</p>
+  </div>
+
+  <div class="form-group">
+    <label>Override System Save?</label>
+    <div class="form-fields">
+      <input type="checkbox" name="flags.aoe-easy-resolve.useOverride" {{checked useOverride}}>
+    </div>
+    <p class="notes">Check this to ignore the system's default save data.</p>
+  </div>
+
+  <div class="form-group">
+    <label>Save Type</label>
+    <div class="form-fields">
+      <select name="flags.aoe-easy-resolve.saveType">
+        <option value="fortitude" {{#if isFort}}selected{{/if}}>Fortitude</option>
+        <option value="reflex" {{#if isReflex}}selected{{/if}}>Reflex</option>
+        <option value="will" {{#if isWill}}selected{{/if}}>Will</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Custom DC</label>
+    <div class="form-fields">
+      <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 15">
+    </div>
+  </div>
+
+  <hr style="margin: 5px 0;">
+  <p class="notes"><strong>Custom Damage Override</strong></p>
+  
+  <div class="form-group">
+    <label>Use Custom Damage?</label>
+    <div class="form-fields">
+      <input type="checkbox" name="flags.aoe-easy-resolve.useCustomDamage" {{checked useCustomDamage}}>
+    </div>
+    <p class="notes">Bypass item damage and roll this instead.</p>
+  </div>
+
+  <div class="form-group">
+    <label>Formula</label>
+    <div class="form-fields">
+      <input type="text" name="flags.aoe-easy-resolve.customDamage" value="{{customDamage}}" placeholder="e.g. 3d6">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Damage Type</label>
+    <div class="form-fields">
+      <select name="flags.aoe-easy-resolve.customDamageType">
+        {{#each damageTypeOptions}}
+          <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
+        {{/each}}
+      </select>
+    </div>
+  </div>
+
+  <hr style="margin: 5px 0;">
+  <p class="notes"><strong>Apply Effects (Compendium UUIDs)</strong></p>
+  
+  <div class="form-group"><label>Crit Success</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.criticalSuccess" value="{{effects.criticalSuccess}}"></div></div>
+  <div class="form-group"><label>Success</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.success" value="{{effects.success}}"></div></div>
+  <div class="form-group"><label>Failure</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.failure" value="{{effects.failure}}"></div></div>
+  <div class="form-group"><label>Crit Failure</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.criticalFailure" value="{{effects.criticalFailure}}"></div></div>
+
+  <hr style="margin: 5px 0;">
+  <p class="notes"><strong>Damage Multipliers (Leave blank for standard Basic Save math)</strong></p>
+
+  <div class="form-group"><label>Crit Success</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalSuccess" value="{{multipliers.criticalSuccess}}" placeholder="0"></div></div>
+  <div class="form-group"><label>Success</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.success" value="{{multipliers.success}}" placeholder="0.5"></div></div>
+  <div class="form-group"><label>Failure</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.failure" value="{{multipliers.failure}}" placeholder="1"></div></div>
+  <div class="form-group"><label>Crit Failure</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalFailure" value="{{multipliers.criticalFailure}}" placeholder="2"></div></div>
+</fieldset>
