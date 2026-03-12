@@ -552,144 +552,172 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     }
   });
 
+// Apply Damage & Effects Button
 html.find(".apply-damage-btn").click(async (event) => {
-    event.preventDefault();
+  event.preventDefault();
 
-    const freshMessage = game.messages.get(message.id);
-    const aoeData = freshMessage.flags[MODULE_ID];
-    if (!aoeData || !aoeData.targets) return;
+  const freshMessage = game.messages.get(message.id);
+  const aoeData = freshMessage.flags[MODULE_ID];
+  if (!aoeData || !aoeData.targets) return;
 
-    const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
-    let pf2eDamageRoll = null;
-    if (aoeData.damageJSON) {
-      try {
-        pf2eDamageRoll = pf2eDamageClass.fromJSON(aoeData.damageJSON);
-      } catch (e) {
-        console.error("AoE Easy Resolve | Failed to parse DamageRoll JSON.", e);
-      }
+  const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
+  let pf2eDamageRoll = null;
+  if (aoeData.damageJSON) {
+    try {
+      pf2eDamageRoll = pf2eDamageClass.fromJSON(aoeData.damageJSON);
+    } catch (e) {
+      console.error("AoE Easy Resolve | Failed to parse DamageRoll JSON.", e);
     }
+  }
 
-    let originItem = null;
-    if (aoeData.itemUuid) {
-      try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {}
-    }
+  let originItem = null;
+  if (aoeData.itemUuid) {
+    try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {}
+  }
 
-    const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
-    const itemEffects = aoeFlags.effects || {};
-    const itemMultipliers = aoeFlags.multipliers || {};
-    
-    let processedCount = 0;
-    let needsDamageWarning = false;
+  const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
+  const itemEffects = aoeFlags.effects || {};
+  const itemMultipliers = aoeFlags.multipliers || {};
+  
+  let processedCount = 0;
+  let needsDamageWarning = false;
 
-    const itemHasDamage = (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || (aoeFlags.useCustomDamage && aoeFlags.customDamage) || aoeData.hazardDamage;
-    
-    if (itemHasDamage && !aoeData.damageTotal) {
-      needsDamageWarning = true;
-    }
+  const itemHasDamage = (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || (aoeFlags.useCustomDamage && aoeFlags.customDamage) || aoeData.hazardDamage;
+  
+  if (itemHasDamage && !aoeData.damageTotal) {
+    needsDamageWarning = true;
+  }
 
-    for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
-      if (!targetData.hasRolled) continue; 
+  for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
+    if (!targetData.hasRolled) continue; 
 
-      const token = canvas.tokens.get(tokenId);
-      if (!token || !token.actor) continue;
+    const token = canvas.tokens.get(tokenId);
+    if (!token || !token.actor) continue;
 
-      const dos = targetData.degreeOfSuccess; 
-      processedCount++; 
+    const dos = targetData.degreeOfSuccess; 
+    processedCount++; 
 
-      if (aoeData.damageTotal) {
-        let multiplier = 0;
-        const customVal = itemMultipliers[dos];
-        
-        if (customVal !== undefined && customVal !== null && customVal.toString().trim() !== "") {
-          multiplier = parseFloat(customVal);
+    if (aoeData.damageTotal) {
+      let multiplier = 0;
+      const customVal = itemMultipliers[dos];
+      
+      if (customVal !== undefined && customVal !== null && customVal.toString().trim() !== "") {
+        multiplier = parseFloat(customVal);
+      } else {
+        const isBasic = aoeData.isBasicSave !== false;
+
+        if (isBasic) {
+          if (dos === "criticalFailure") multiplier = 2;
+          else if (dos === "failure") multiplier = 1;
+          else if (dos === "success") multiplier = 0.5;
+          else if (dos === "criticalSuccess") multiplier = 0;
         } else {
-          const isBasic = aoeData.isBasicSave !== false;
-
-          if (isBasic) {
-            if (dos === "criticalFailure") multiplier = 2;
-            else if (dos === "failure") multiplier = 1;
-            else if (dos === "success") multiplier = 0.5;
-            else if (dos === "criticalSuccess") multiplier = 0;
-          } else {
-            if (dos === "criticalFailure" || dos === "failure") multiplier = 1;
-          }
-        }
-
-        if (multiplier > 0) {
-          try {
-            if (token.actor.applyDamage) {
-              await token.actor.applyDamage({
-                damage: pf2eDamageRoll || Math.floor(aoeData.damageTotal * multiplier),
-                token: token.document,
-                item: originItem,
-                multiplier: multiplier
-              });
-            } else {
-              throw new Error("PF2e applyDamage API not found on actor.");
-            }
-          } catch (error) {
-            console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP reduction.`, error);
-            try {
-              const finalDamage = Math.floor(aoeData.damageTotal * multiplier);
-              const currentHP = token.actor.system.attributes.hp.value;
-              await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - finalDamage) });
-            } catch (fallbackError) {
-              console.error(`AoE Easy Resolve | Raw HP reduction failed for ${token.name}`, fallbackError);
-            }
-          }
+          if (dos === "criticalFailure" || dos === "failure") multiplier = 1;
         }
       }
 
-      const effectUuid = itemEffects[dos];
-      if (effectUuid && effectUuid.trim() !== "") {
+      if (multiplier > 0) {
+        let damageToApply = Math.floor(aoeData.damageTotal * multiplier);
+
+        if (pf2eDamageRoll) {
+          if (multiplier === 1) {
+            damageToApply = pf2eDamageRoll;
+          } else {
+            try {
+              let formulaParts = [];
+              if (pf2eDamageRoll.instances) {
+                for (const inst of pf2eDamageRoll.instances) {
+                  const scaled = Math.floor(inst.total * multiplier);
+                  const flavor = inst.type || "untyped";
+                  formulaParts.push(`${scaled}[${flavor}]`);
+                }
+              }
+              
+              if (formulaParts.length > 0) {
+                // The vital comma syntax to preserve multiple types natively
+                const newRoll = new pf2eDamageClass(formulaParts.join(", "));
+                await newRoll.evaluate({ async: true });
+                damageToApply = newRoll;
+              }
+            } catch (e) {
+              console.warn("AoE Easy Resolve | Failed to rebuild scaled DamageRoll.", e);
+            }
+          }
+        }
+
         try {
-          const effectDoc = await fromUuid(effectUuid.trim());
-          if (effectDoc) {
-            await token.actor.createEmbeddedDocuments("Item", [effectDoc.toObject()]);
+          if (token.actor.applyDamage) {
+            await token.actor.applyDamage({
+              damage: damageToApply,
+              token: token.document,
+              item: originItem
+            });
+          } else {
+            throw new Error("PF2e applyDamage API not found on actor.");
           }
         } catch (error) {
-          console.error(`AoE Easy Resolve | Failed to apply effect UUID: ${effectUuid}`, error);
+          console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP reduction.`, error);
+          try {
+            const finalDamage = Math.floor(aoeData.damageTotal * multiplier);
+            const currentHP = token.actor.system.attributes.hp.value;
+            await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - finalDamage) });
+          } catch (fallbackError) {
+            console.error(`AoE Easy Resolve | Raw HP reduction failed for ${token.name}`, fallbackError);
+          }
         }
       }
     }
 
-    if (processedCount > 0) {
-      if (needsDamageWarning) {
-        ui.notifications.warn("AoE Easy Resolve | Processed saves, but you forgot to click 'Roll Damage' first!");
-      } else {
-        ui.notifications.info(`AoE Easy Resolve | Processed damage and effects for ${processedCount} targets.`);
+    const effectUuid = itemEffects[dos];
+    if (effectUuid && effectUuid.trim() !== "") {
+      try {
+        const effectDoc = await fromUuid(effectUuid.trim());
+        if (effectDoc) {
+          await token.actor.createEmbeddedDocuments("Item", [effectDoc.toObject()]);
+        }
+      } catch (error) {
+        console.error(`AoE Easy Resolve | Failed to apply effect UUID: ${effectUuid}`, error);
       }
-    } else {
-      ui.notifications.warn("AoE Easy Resolve | No targets have rolled saves yet.");
     }
+  }
 
-    if (game.user.isGM && aoeData.templateId) {
-      const templateExists = canvas.templates.get(aoeData.templateId);
-      if (templateExists) {
-        new Dialog({
-          title: "Remove Template?",
-          content: "<p>Do you want to remove the measured template from the canvas?</p>",
-          buttons: {
-            yes: {
-              icon: '<i class="fas fa-trash"></i>',
-              label: "Yes",
-              callback: async () => {
-                try {
-                  await canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", [aoeData.templateId]);
-                  ui.notifications.info("AoE Easy Resolve | Template removed.");
-                } catch(e) {}
-              }
-            },
-            no: {
-              icon: '<i class="fas fa-times"></i>',
-              label: "No"
+  if (processedCount > 0) {
+    if (needsDamageWarning) {
+      ui.notifications.warn("AoE Easy Resolve | Processed saves, but you forgot to click 'Roll Damage' first!");
+    } else {
+      ui.notifications.info(`AoE Easy Resolve | Processed damage and effects for ${processedCount} targets.`);
+    }
+  } else {
+    ui.notifications.warn("AoE Easy Resolve | No targets have rolled saves yet.");
+  }
+
+  if (game.user.isGM && aoeData.templateId) {
+    const templateExists = canvas.templates.get(aoeData.templateId);
+    if (templateExists) {
+      new Dialog({
+        title: "Remove Template?",
+        content: "<p>Do you want to remove the measured template from the canvas?</p>",
+        buttons: {
+          yes: {
+            icon: '<i class="fas fa-trash"></i>',
+            label: "Yes",
+            callback: async () => {
+              try {
+                await canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", [aoeData.templateId]);
+                ui.notifications.info("AoE Easy Resolve | Template removed.");
+              } catch(e) {}
             }
           },
-          default: "yes"
-        }).render(true);
-      }
+          no: {
+            icon: '<i class="fas fa-times"></i>',
+            label: "No"
+          }
+        },
+        default: "yes"
+      }).render(true);
     }
-  });
+  }
+});
 });
 
 async function generateTemplateCard(templateObj, templateDoc, cfg) {
