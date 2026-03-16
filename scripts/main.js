@@ -18,36 +18,30 @@ function getUnadjustedDos(total, dc, d20) {
   return dos;
 }
 
-function formatTargetsData(targets) {
-  const result = {};
-  const getDosDetails = (dos) => {
-    if (dos === "criticalSuccess") return { color: "rgb(0, 128, 0)", label: "Crit Success" };
-    if (dos === "success") return { color: "rgb(0, 0, 255)", label: "Success" };
-    if (dos === "failure") return { color: "rgb(255, 69, 0)", label: "Failure" };
-    if (dos === "criticalFailure") return { color: "rgb(255, 0, 0)", label: "Crit Fail" };
-    return { color: "inherit", label: "" };
+function formatTargetsData(targetsObj) {
+  const dosMap = {
+    "criticalSuccess": { label: "Crit Success", color: "#008000" },
+    "success": { label: "Success", color: "#0000ff" },
+    "failure": { label: "Failure", color: "#ff8c00" },
+    "criticalFailure": { label: "Crit Failure", color: "#ff0000" }
   };
 
-  for (const [id, t] of Object.entries(targets || {})) {
-    const finalDos = getDosDetails(t.degreeOfSuccess);
-    let unadjustedDosDetails = null;
+  return Object.values(targetsObj).map(t => {
+    let displayData = { ...t };
     
-    if (t.unadjustedDegreeOfSuccess !== undefined && t.unadjustedDegreeOfSuccess !== t.degreeOfSuccess) {
-      unadjustedDosDetails = getDosDetails(t.unadjustedDegreeOfSuccess);
+    if (t.degreeOfSuccess) {
+      displayData.dosColor = dosMap[t.degreeOfSuccess]?.color || "#000000";
+      displayData.dosLabel = dosMap[t.degreeOfSuccess]?.label || t.degreeOfSuccess;
     }
-
-    result[id] = { 
-      ...t, 
-      dosColor: finalDos.color, 
-      dosLabel: finalDos.label,
-      hasAdjustment: !!unadjustedDosDetails,
-      unadjustedColor: unadjustedDosDetails?.color,
-      unadjustedLabel: unadjustedDosDetails?.label
-    };
-  }
-  return result;
+    
+    if (t.unadjustedDegreeOfSuccess) {
+      displayData.unadjustedDosLabel = dosMap[t.unadjustedDegreeOfSuccess]?.label || t.unadjustedDegreeOfSuccess;
+      displayData.showUnadjusted = t.degreeOfSuccess !== t.unadjustedDegreeOfSuccess;
+    }
+    
+    return displayData;
+  }).sort((a, b) => a.name.localeCompare(b.name));
 }
-
 Hooks.once("init", async function () {
     console.log(`${MODULE_ID} | Initializing module`);
   
@@ -386,7 +380,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     
     const npcsToRoll = [];
     for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
-      if (targetData.hasRolled) continue;
+      if (targetData.hasRolled || targetData.isHealing || targetData.isImmune) continue;
       const token = canvas.tokens.get(tokenId);
       if (token && token.actor && !token.actor.hasPlayerOwner) {
         npcsToRoll.push({ tokenId, token });
@@ -553,6 +547,8 @@ Hooks.on("renderChatMessage", (message, html, data) => {
   });
 
 // Apply Damage & Effects Button
+// Apply Damage & Effects Button
+// Apply Damage & Effects Button
 html.find(".apply-damage-btn").click(async (event) => {
   event.preventDefault();
 
@@ -589,52 +585,107 @@ html.find(".apply-damage-btn").click(async (event) => {
   }
 
   for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
-    if (!targetData.hasRolled) continue; 
-
     const token = canvas.tokens.get(tokenId);
     if (!token || !token.actor) continue;
 
-    const dos = targetData.degreeOfSuccess; 
+    const negativeHealing = token.actor.system.attributes.hp?.negativeHealing || false;
+    const itemTraits = originItem?.system?.traits?.value || [];
+    
+    const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
+    const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
+    const isHealingTrait = itemTraits.includes("healing");
+
+    let effectType = "standard";
+    let overrideType = null;
+
+    if (isVitality) {
+      effectType = negativeHealing ? "damage" : "heal";
+      overrideType = "vitality";
+    } else if (isVoid) {
+      effectType = negativeHealing ? "heal" : "damage";
+      overrideType = "void";
+    } else if (isHealingTrait) {
+      effectType = negativeHealing ? "none" : "heal";
+    }
+
+    if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) {
+       effectType = negativeHealing ? "none" : "heal";
+    }
+
+    if (effectType === "none") {
+      processedCount++;
+      continue; 
+    }
+
+    const isHealEffect = effectType === "heal";
+
+    if (!targetData.hasRolled && !isHealEffect) continue;
+
+    const dos = targetData.degreeOfSuccess || "failure"; 
     processedCount++; 
 
     if (aoeData.damageTotal) {
       let multiplier = 0;
-      const customVal = itemMultipliers[dos];
       
-      if (customVal !== undefined && customVal !== null && customVal.toString().trim() !== "") {
-        multiplier = parseFloat(customVal);
+      if (isHealEffect) {
+        multiplier = 1; 
       } else {
-        const isBasic = aoeData.isBasicSave !== false;
-
-        if (isBasic) {
-          if (dos === "criticalFailure") multiplier = 2;
-          else if (dos === "failure") multiplier = 1;
-          else if (dos === "success") multiplier = 0.5;
-          else if (dos === "criticalSuccess") multiplier = 0;
+        const customVal = itemMultipliers[dos];
+        if (customVal !== undefined && customVal !== null && customVal.toString().trim() !== "") {
+          multiplier = parseFloat(customVal);
         } else {
-          if (dos === "criticalFailure" || dos === "failure") multiplier = 1;
+          const isBasic = aoeData.isBasicSave !== false;
+          if (isBasic) {
+            if (dos === "criticalFailure") multiplier = 2;
+            else if (dos === "failure") multiplier = 1;
+            else if (dos === "success") multiplier = 0.5;
+            else if (dos === "criticalSuccess") multiplier = 0;
+          } else {
+            if (dos === "criticalFailure" || dos === "failure") multiplier = 1;
+          }
         }
       }
 
       if (multiplier > 0) {
-        let damageToApply = Math.floor(aoeData.damageTotal * multiplier);
+        if (isHealEffect) {
+          const healAmount = aoeData.damageTotal;
+          const currentHP = token.actor.system.attributes.hp.value;
+          const maxHP = token.actor.system.attributes.hp.max;
+          
+          // Calculate the exact amount of HP they can physically receive
+          const actualHealed = Math.min(maxHP - currentHP, healAmount);
+          const newHP = currentHP + actualHealed;
+          
+          await token.actor.update({ "system.attributes.hp.value": newHP });
 
-        if (pf2eDamageRoll) {
-          if (multiplier === 1) {
-            damageToApply = pf2eDamageRoll;
-          } else {
+          // Only spawn the scrolling text if they actually gained HP
+          if (canvas.ready && actualHealed > 0) {
+            canvas.interface.createScrollingText(token.center, `+${actualHealed}`, {
+              anchor: CONST.TEXT_ANCHOR_POINTS.TOP,
+              fill: 0x4ade80, 
+              direction: CONST.TEXT_ANCHOR_POINTS.UP
+            });
+          }
+
+          // Create the Healing Chat Card using the clamped number
+          await ChatMessage.create({
+            speaker: ChatMessage.getSpeaker({ token: token.document }),
+            flavor: `<strong>${originItem ? originItem.name : "Healing"}</strong>`,
+            content: `<div class="dice-roll"><div class="dice-result"><div class="dice-total" style="color: #1e8b42; background: rgba(74, 222, 128, 0.1);">${actualHealed} Healing</div></div></div>`
+          });
+        } else {
+          let damageToApply = Math.floor(aoeData.damageTotal * multiplier);
+          if (pf2eDamageRoll) {
             try {
               let formulaParts = [];
               if (pf2eDamageRoll.instances) {
                 for (const inst of pf2eDamageRoll.instances) {
                   const scaled = Math.floor(inst.total * multiplier);
-                  const flavor = inst.type || "untyped";
+                  const flavor = overrideType || inst.type || "untyped";
                   formulaParts.push(`${scaled}[${flavor}]`);
                 }
               }
-              
               if (formulaParts.length > 0) {
-                // The vital comma syntax to preserve multiple types natively
                 const newRoll = new pf2eDamageClass(formulaParts.join(", "));
                 await newRoll.evaluate({ async: true });
                 damageToApply = newRoll;
@@ -643,33 +694,33 @@ html.find(".apply-damage-btn").click(async (event) => {
               console.warn("AoE Easy Resolve | Failed to rebuild scaled DamageRoll.", e);
             }
           }
-        }
 
-        try {
-          if (token.actor.applyDamage) {
-            await token.actor.applyDamage({
-              damage: damageToApply,
-              token: token.document,
-              item: originItem
-            });
-          } else {
-            throw new Error("PF2e applyDamage API not found on actor.");
-          }
-        } catch (error) {
-          console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP reduction.`, error);
           try {
-            const finalDamage = Math.floor(aoeData.damageTotal * multiplier);
-            const currentHP = token.actor.system.attributes.hp.value;
-            await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - finalDamage) });
-          } catch (fallbackError) {
-            console.error(`AoE Easy Resolve | Raw HP reduction failed for ${token.name}`, fallbackError);
+            if (token.actor.applyDamage) {
+              await token.actor.applyDamage({
+                damage: damageToApply,
+                token: token.document,
+                item: originItem
+              });
+            } else {
+              throw new Error("PF2e applyDamage API not found on actor.");
+            }
+          } catch (error) {
+            console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP manipulation.`, error);
+            try {
+              const finalAmount = typeof damageToApply === "number" ? damageToApply : damageToApply.total;
+              const currentHP = token.actor.system.attributes.hp.value;
+              await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - finalAmount) });
+            } catch (fallbackError) {
+              console.error(`AoE Easy Resolve | Raw HP fallback failed for ${token.name}`, fallbackError);
+            }
           }
         }
       }
     }
 
     const effectUuid = itemEffects[dos];
-    if (effectUuid && effectUuid.trim() !== "") {
+    if (effectUuid && effectUuid.trim() !== "" && !isHealEffect) {
       try {
         const effectDoc = await fromUuid(effectUuid.trim());
         if (effectDoc) {
@@ -721,53 +772,79 @@ html.find(".apply-damage-btn").click(async (event) => {
 });
 
 async function generateTemplateCard(templateObj, templateDoc, cfg) {
-    const targetedTokens = canvas.tokens.placeables.filter(token => {
-      const center = token.center;
-      return templateObj.shape.contains(center.x - templateDoc.x, center.y - templateDoc.y);
-    });
-  
-    if (targetedTokens.length === 0) {
-      ui.notifications.info("AoE Easy Resolve | No tokens caught in the blast area.");
-      return;
-    }
-  
-    const targetsData = {};
-    targetedTokens.forEach(t => {
-      targetsData[t.id] = { id: t.id, name: t.name, img: t.document.texture.src, hasRolled: false, rollTotal: null, degreeOfSuccess: null };
-    });
-  
-    const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-    const formattedSaveType = cfg.saveType.charAt(0).toUpperCase() + cfg.saveType.slice(1);
-    
-    const htmlContent = await renderTemplate(templatePath, { 
-      targets: formatTargetsData(targetsData), 
-      itemName: cfg.itemName,
-      saveType: formattedSaveType,
-      saveDC: cfg.saveDC,
-      damageTotal: null,
-      damageBreakdown: null,
-      damageTooltip: null,
-      damageFormula: null,
-      isGM: game.user.isGM
-    });
-  
-    await ChatMessage.create({
-      speaker: ChatMessage.getSpeaker(),
-      content: htmlContent,
-      flags: {
-        [MODULE_ID]: {
-          templateId: templateDoc.id,
-          itemUuid: cfg.originItem ? cfg.originItem.uuid : null,
-          itemName: cfg.itemName,
-          saveType: cfg.saveType,
-          saveDC: cfg.saveDC,
-          isBasicSave: cfg.isBasicSave,
-          targets: targetsData,
-          hazardDamage: cfg.hazardDamage || null
-        }
-      }
-    });
+  const targetedTokens = canvas.tokens.placeables.filter(token => {
+    const center = token.center;
+    return templateObj.shape.contains(center.x - templateDoc.x, center.y - templateDoc.y);
+  });
+
+  if (targetedTokens.length === 0) {
+    ui.notifications.info("AoE Easy Resolve | No tokens caught in the blast area.");
+    return;
   }
+
+  // Pre-scan the spell's traits to flag the UI before the card even renders
+  const itemTraits = cfg.originItem?.system?.traits?.value || [];
+  const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
+  const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
+  const isHealingTrait = itemTraits.includes("healing");
+
+  const targetsData = {};
+  targetedTokens.forEach(t => {
+    const negativeHealing = t.actor?.system?.attributes?.hp?.negativeHealing || false;
+    let effectType = "standard";
+
+    if (isVitality) effectType = negativeHealing ? "damage" : "heal";
+    else if (isVoid) effectType = negativeHealing ? "heal" : "damage";
+    else if (isHealingTrait) effectType = negativeHealing ? "none" : "heal";
+
+    if (effectType === "standard" && cfg.hazardDamage && cfg.hazardDamage.includes("healing")) {
+       effectType = negativeHealing ? "none" : "heal";
+    }
+
+    targetsData[t.id] = { 
+      id: t.id, 
+      name: t.name, 
+      img: t.document.texture.src, 
+      hasRolled: false, 
+      rollTotal: null, 
+      degreeOfSuccess: null,
+      isHealing: effectType === "heal",
+      isImmune: effectType === "none"
+    };
+  });
+
+  const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+  const formattedSaveType = cfg.saveType.charAt(0).toUpperCase() + cfg.saveType.slice(1);
+  
+  const htmlContent = await renderTemplate(templatePath, { 
+    targets: formatTargetsData(targetsData), 
+    itemName: cfg.itemName,
+    saveType: formattedSaveType,
+    saveDC: cfg.saveDC,
+    damageTotal: null,
+    damageBreakdown: null,
+    damageFormula: null,
+    damageTooltip: null,
+    isGM: game.user.isGM
+  });
+
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker(),
+    content: htmlContent,
+    flags: {
+      [MODULE_ID]: {
+        templateId: templateDoc.id,
+        itemUuid: cfg.originItem ? cfg.originItem.uuid : null,
+        itemName: cfg.itemName,
+        saveType: cfg.saveType,
+        saveDC: cfg.saveDC,
+        isBasicSave: cfg.isBasicSave,
+        targets: targetsData,
+        hazardDamage: cfg.hazardDamage || null
+      }
+    }
+  });
+}
   
   Hooks.on("createMeasuredTemplate", async (templateDoc, options, userId) => {
     if (game.user.id !== userId) return;

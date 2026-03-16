@@ -1,63 +1,63 @@
-<div class="pf2e-aoe-card">
-  <header class="card-header" style="text-align: center; border-bottom: 2px solid var(--color-border-light-primary); margin-bottom: 5px; padding-bottom: 5px;">
-    <h3 style="margin-bottom: 2px;">{{itemName}}</h3>
-    {{#if saveDC}}
-      <span style="font-size: 1.1em; font-weight: bold;">DC {{saveDC}} {{saveType}} Save</span><br>
-    {{/if}}
+<div class="aoe-easy-resolve-card">
+  <header style="text-align: center; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 5px;">
+    <h2 style="margin: 0;">{{itemName}}</h2>
+    <div style="font-weight: bold; font-size: 1.2em;">DC {{saveDC}} {{saveType}} Save</div>
     
     {{#if damageTotal}}
       <div style="margin-top: 5px;">
-        <span class="damage-roll" style="font-weight: bold; color: #8b0000; font-size: 1.1em;" title="{{#if damageTooltip}}{{damageTooltip}}{{else}}{{damageFormula}}{{/if}}">
+        <span class="damage-roll" style="font-weight: bold; color: #ff6b6b; text-shadow: 1px 1px 2px black; font-size: 1.1em;" title="{{#if damageTooltip}}{{damageTooltip}}{{else}}{{damageFormula}}{{/if}}">
           Damage: {{#if damageBreakdown}}{{damageBreakdown}}{{else}}{{damageTotal}}{{/if}}
         </span>
       </div>
-    {{else}}
-      <button type="button" class="roll-damage-btn" style="margin-top: 5px;">
-        <i class="fas fa-dice-d20"></i> Roll Damage
-      </button>
     {{/if}}
   </header>
 
-  <ul class="target-list" style="list-style: none; padding: 0; margin: 0 0 10px 0;">
+  <div class="targets-section" style="display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px;">
     {{#each targets}}
-      <li class="target-item" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.15);">
+      <div class="target-row" style="display: flex; align-items: center; background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 4px;">
+        <img src="{{img}}" width="30" height="30" style="border: none; margin-right: 10px;" />
+        <div class="target-name" style="flex: 1; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{name}}">{{name}}</div>
         
-        <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding-right: 10px;">
-          <img src="{{img}}" width="28" height="28" style="border: none; border-radius: 4px; flex-shrink: 0; box-shadow: 0 0 3px rgba(0,0,0,0.6);">
-          <span style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{name}}">{{name}}</span>
-        </div>
-        
-        <div style="flex-shrink: 0;">
-          {{#if hasRolled}}
-            <div style="text-align: right; padding-right: 4px; line-height: 1.1;">
+        <div class="target-save" style="flex: 0 0 80px; text-align: right;">
+          {{#if isHealing}}
+            <div style="font-weight: bold; color: #4ade80; text-shadow: 1px 1px 2px black; font-size: 1.1em; padding-top: 4px;" title="Target receives healing automatically">Healing</div>
+          {{else if isImmune}}
+            <div style="font-weight: bold; color: #9ca3af; font-size: 1.1em; padding-top: 4px;" title="Target is immune to this effect">Immune</div>
+          {{else if hasRolled}}
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
               <div style="font-weight: bold; font-size: 1.1em;" title="{{rollTooltip}}">{{rollTotal}}</div>
-              <div style="font-size: 0.75em; font-weight: bold; text-transform: uppercase;">
-                {{#if hasAdjustment}}
-                  <span style="color: {{unadjustedColor}}; text-decoration: line-through; opacity: 0.6; margin-right: 4px;" title="Original Result">{{unadjustedLabel}}</span>
-                  <i class="fas fa-arrow-right" style="font-size: 0.8em; margin-right: 4px; color: #555;"></i>
-                {{/if}}
-                <span style="color: {{dosColor}};">{{dosLabel}}</span>
+              <div style="font-size: 0.8em; color: {{dosColor}};">
+                {{dosLabel}}
               </div>
+              {{#if showUnadjusted}}
+                <div style="font-size: 0.7em; color: #888; text-decoration: line-through;" title="Original unadjusted result">
+                  {{unadjustedDosLabel}}
+                </div>
+              {{/if}}
+            </div>
+              {{#if (ne degreeOfSuccess unadjustedDegreeOfSuccess)}}
+                <div style="font-size: 0.7em; color: #888; text-decoration: line-through;" title="Original unadjusted result">
+                  {{dosLabel unadjustedDegreeOfSuccess}}
+                </div>
+              {{/if}}
             </div>
           {{else}}
-            <button type="button" class="roll-save-btn" data-token-id="{{id}}" style="line-height: normal; padding: 2px 8px;">
+            <button class="roll-save-btn" data-token-id="{{id}}" style="padding: 2px 5px; font-size: 0.9em; width: 100%;" {{#unless ../isGM}} {{#unless isOwner}}disabled{{/unless}} {{/unless}}>
               <i class="fas fa-dice-d20"></i> Save
             </button>
           {{/if}}
         </div>
-
-      </li>
+      </div>
     {{/each}}
-  </ul>
-
-  <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-    {{#if isGM}}
-      <button type="button" class="roll-all-npcs-btn" style="flex: 1; padding: 2px 5px; line-height: 1.2rem;">
-        <i class="fas fa-users-cog"></i> Roll NPCs
-      </button>
-    {{/if}}
-    <button type="button" class="apply-damage-btn" style="flex: 1; padding: 2px 5px; line-height: 1.2rem;">
-      <i class="fas fa-heart-broken"></i> Apply Damage
-    </button>
   </div>
+
+  {{#if isGM}}
+    <div class="gm-controls" style="display: flex; flex-direction: column; gap: 5px; border-top: 1px solid #ccc; padding-top: 10px;">
+      <div style="display: flex; gap: 5px;">
+        <button class="roll-all-npcs-btn" style="flex: 1;"><i class="fas fa-users"></i> Roll NPCs</button>
+        <button class="roll-damage-btn" style="flex: 1;"><i class="fas fa-tint"></i> Roll Damage</button>
+      </div>
+      <button class="apply-damage-btn" style="width: 100%; margin-top: 5px;"><i class="fas fa-heart-broken"></i> Apply Damage & Effects</button>
+    </div>
+  {{/if}}
 </div>
