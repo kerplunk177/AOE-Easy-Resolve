@@ -6,7 +6,6 @@
     <div class="form-fields">
       <input type="checkbox" name="flags.aoe-easy-resolve.ignoreAoE" {{checked ignoreAoE}}>
     </div>
-    <p class="notes">Check this to completely disable the AoE save card for this item.</p>
   </div>
 
   <div class="form-group">
@@ -14,8 +13,29 @@
     <div class="form-fields">
       <input type="checkbox" name="flags.aoe-easy-resolve.useOverride" {{checked useOverride}}>
     </div>
-    <p class="notes">Check this to ignore the system's default save data.</p>
   </div>
+
+  <div class="form-group">
+    <label>Provide Custom Template?</label>
+    <div class="form-fields">
+      <input type="checkbox" name="flags.aoe-easy-resolve.provideTemplate" {{checked provideTemplate}}>
+    </div>
+  </div>
+
+  {{#if provideTemplate}}
+  <div class="form-group">
+    <label>Shape & Size</label>
+    <div class="form-fields">
+      <select name="flags.aoe-easy-resolve.templateType" style="width: 50%;">
+        <option value="cone" {{#if isCone}}selected{{/if}}>Cone</option>
+        <option value="circle" {{#if isCircle}}selected{{/if}}>Burst</option>
+        <option value="ray" {{#if isRay}}selected{{/if}}>Line</option>
+        <option value="rect" {{#if isRect}}selected{{/if}}>Rectangle</option>
+      </select>
+      <input type="number" name="flags.aoe-easy-resolve.templateDistance" value="{{templateDistance}}" placeholder="ft." style="width: 50%;">
+    </div>
+  </div>
+  {{/if}}
 
   <div class="form-group">
     <label>Save Type</label>
@@ -34,7 +54,6 @@
       <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 15">
     </div>
   </div>
-  
 
   <hr style="margin: 5px 0;">
   <p class="notes"><strong>Custom Damage Override</strong></p>
@@ -44,7 +63,6 @@
     <div class="form-fields">
       <input type="checkbox" name="flags.aoe-easy-resolve.useCustomDamage" {{checked useCustomDamage}}>
     </div>
-    <p class="notes">Bypass item damage and roll this instead.</p>
   </div>
 
   <div class="form-group">
@@ -66,16 +84,7 @@
   </div>
 
   <hr style="margin: 5px 0;">
-  <p class="notes"><strong>Apply Effects (Compendium UUIDs)</strong></p>
-  
-  <div class="form-group"><label>Crit Success</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.criticalSuccess" value="{{effects.criticalSuccess}}"></div></div>
-  <div class="form-group"><label>Success</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.success" value="{{effects.success}}"></div></div>
-  <div class="form-group"><label>Failure</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.failure" value="{{effects.failure}}"></div></div>
-  <div class="form-group"><label>Crit Failure</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.effects.criticalFailure" value="{{effects.criticalFailure}}"></div></div>
-
-  <hr style="margin: 5px 0;">
-  <p class="notes"><strong>Damage Multipliers (Leave blank for standard Basic Save math)</strong></p>
-
+  <p class="notes"><strong>Basic Save Multipliers</strong></p>
   <div class="form-group"><label>Crit Success</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalSuccess" value="{{multipliers.criticalSuccess}}" placeholder="0"></div></div>
   <div class="form-group"><label>Success</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.success" value="{{multipliers.success}}" placeholder="0.5"></div></div>
   <div class="form-group"><label>Failure</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.failure" value="{{multipliers.failure}}" placeholder="1"></div></div>
@@ -84,67 +93,56 @@
 
 
 <fieldset style="margin-top: 15px;">
-  <legend>Attack Roll Configuration</legend>
-
-  <div class="form-group">
-    <label>Enable Attack Effects</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.aoe-easy-resolve.attackEffects.enabled" {{checked attackEffects.enabled}}>
+  <legend>Effect Rules Engine</legend>
+  <p class="notes" style="margin-bottom: 10px;">Define specific triggers based on roll outcomes and target traits.</p>
+  
+  {{#each processedRules as |rule|}}
+  <div style="border: 1px solid #7a7971; padding: 10px; margin-bottom: 10px; position: relative; background: rgba(0,0,0,0.1); border-radius: 3px;">
+    <a class="delete-rule-btn" data-index="{{rule.index}}" style="position: absolute; top: 5px; right: 5px; color: #ff6666; cursor: pointer;" title="Delete Rule"><i class="fas fa-trash"></i></a>
+    
+    <div class="form-group">
+      <label>Trigger</label>
+      <div class="form-fields">
+        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.context">
+          <option value="attack" {{#if rule.isAttack}}selected{{/if}}>Attack Roll</option>
+          <option value="save" {{#if rule.isSave}}selected{{/if}}>Saving Throw</option>
+        </select>
+        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.outcome">
+          <option value="criticalSuccess" {{#if rule.isCS}}selected{{/if}}>Crit / Crit Success</option>
+          <option value="success" {{#if rule.isS}}selected{{/if}}>Hit / Success</option>
+          <option value="failure" {{#if rule.isF}}selected{{/if}}>Miss / Failure</option>
+          <option value="criticalFailure" {{#if rule.isCF}}selected{{/if}}>Crit Miss / Crit Fail</option>
+        </select>
+      </div>
     </div>
-    <p class="notes">Trigger conditions or extra damage based on the Strike's roll outcome.</p>
+    
+    <div class="form-group">
+      <label>Target Trait Requirement</label>
+      <div class="form-fields">
+        <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.trait" value="{{rule.trait}}" placeholder="e.g. plant (leave blank for any target)">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Condition UUID</label>
+      <div class="form-fields">
+        <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.conditionUuid" value="{{rule.conditionUuid}}" placeholder="Compendium.pf2e...">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Bonus Damage</label>
+      <div class="form-fields">
+        <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.damageFormula" value="{{rule.damageFormula}}" placeholder="e.g. 1d6" style="width: 50%;">
+        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.damageType" style="width: 50%;">
+          {{#each rule.damageTypeOptions}}
+            <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
+          {{/each}}
+        </select>
+      </div>
+    </div>
   </div>
+  {{/each}}
 
-  {{#if attackEffects.enabled}}
-    <hr style="margin: 5px 0;">
-    <p class="notes"><strong>Critical Hit</strong></p>
-    <div class="form-group"><label>Condition UUID</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.attackEffects.criticalSuccess.conditionUuid" value="{{attackEffects.cs.conditionUuid}}" placeholder="Compendium.pf2e..."></div></div>
-    <div class="form-group">
-        <label>Bonus Damage</label>
-        <div class="form-fields">
-            <input type="text" name="flags.aoe-easy-resolve.attackEffects.criticalSuccess.damageFormula" value="{{attackEffects.cs.damageFormula}}" placeholder="e.g. 2d6" style="width: 50%;">
-            <select name="flags.aoe-easy-resolve.attackEffects.criticalSuccess.damageType" style="width: 50%;">
-                {{selectOptions damageTypesObj selected=attackEffects.cs.damageType blank="None / Untyped"}}
-            </select>
-        </div>
-    </div>
-
-    <hr style="margin: 5px 0;">
-    <p class="notes"><strong>Hit</strong></p>
-    <div class="form-group"><label>Condition UUID</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.attackEffects.success.conditionUuid" value="{{attackEffects.suc.conditionUuid}}" placeholder="Compendium.pf2e..."></div></div>
-    <div class="form-group">
-        <label>Bonus Damage</label>
-        <div class="form-fields">
-            <input type="text" name="flags.aoe-easy-resolve.attackEffects.success.damageFormula" value="{{attackEffects.suc.damageFormula}}" placeholder="e.g. 1d6" style="width: 50%;">
-            <select name="flags.aoe-easy-resolve.attackEffects.success.damageType" style="width: 50%;">
-                {{selectOptions damageTypesObj selected=attackEffects.suc.damageType blank="None / Untyped"}}
-            </select>
-        </div>
-    </div>
-
-    <hr style="margin: 5px 0;">
-    <p class="notes"><strong>Miss</strong></p>
-    <div class="form-group"><label>Condition UUID</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.attackEffects.failure.conditionUuid" value="{{attackEffects.fail.conditionUuid}}" placeholder="Compendium.pf2e..."></div></div>
-    <div class="form-group">
-        <label>Bonus Damage</label>
-        <div class="form-fields">
-            <input type="text" name="flags.aoe-easy-resolve.attackEffects.failure.damageFormula" value="{{attackEffects.fail.damageFormula}}" placeholder="e.g. 1" style="width: 50%;">
-            <select name="flags.aoe-easy-resolve.attackEffects.failure.damageType" style="width: 50%;">
-                {{selectOptions damageTypesObj selected=attackEffects.fail.damageType blank="None / Untyped"}}
-            </select>
-        </div>
-    </div>
-
-    <hr style="margin: 5px 0;">
-    <p class="notes"><strong>Critical Miss</strong></p>
-    <div class="form-group"><label>Condition UUID</label><div class="form-fields"><input type="text" name="flags.aoe-easy-resolve.attackEffects.criticalFailure.conditionUuid" value="{{attackEffects.cf.conditionUuid}}" placeholder="Compendium.pf2e..."></div></div>
-    <div class="form-group">
-        <label>Bonus Damage</label>
-        <div class="form-fields">
-            <input type="text" name="flags.aoe-easy-resolve.attackEffects.criticalFailure.damageFormula" value="{{attackEffects.cf.damageFormula}}" placeholder="e.g. 1" style="width: 50%;">
-            <select name="flags.aoe-easy-resolve.attackEffects.criticalFailure.damageType" style="width: 50%;">
-                {{selectOptions damageTypesObj selected=attackEffects.cf.damageType blank="None / Untyped"}}
-            </select>
-        </div>
-    </div>
-  {{/if}}
+  <button type="button" class="add-rule-btn" style="margin-top: 5px;"><i class="fas fa-plus"></i> Add New Rule</button>
 </fieldset>
