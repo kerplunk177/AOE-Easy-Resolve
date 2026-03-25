@@ -41,62 +41,66 @@ function formatTargetsData(targetsObj) {
 }
 
 // --- CORE RULES ENGINE EXECUTOR ---
+// --- CORE RULES ENGINE EXECUTOR ---
 async function executeEffectRules(targetsArray, contextStr, outcomeStr, originItem, messageActor) {
-    if (!originItem) return;
-    const flags = originItem.flags?.[MODULE_ID] || {};
-    const rules = Array.isArray(flags.rules) ? flags.rules : Object.values(flags.rules || {});
-    if (rules.length === 0) return;
+  if (!originItem) return;
+  const flags = originItem.flags?.[MODULE_ID] || {};
+  const rules = Array.isArray(flags.rules) ? flags.rules : Object.values(flags.rules || {});
+  if (rules.length === 0) return;
 
-    for (let rule of rules) {
-        if (rule.context !== contextStr) continue;
-        if (rule.outcome !== outcomeStr) continue;
-        
-        // Filter targets by trait requirement
-        let validTargets = targetsArray;
-        if (rule.trait && rule.trait.trim() !== "") {
-            const reqTrait = rule.trait.trim().toLowerCase();
-            validTargets = targetsArray.filter(t => {
-                const traits = t.actor?.system?.traits?.value || [];
-                return traits.some(tr => tr.toLowerCase() === reqTrait);
-            });
-        }
+  for (let rule of rules) {
+      if (rule.context !== contextStr) continue;
+      if (rule.outcome !== outcomeStr) continue;
+      
+      // Filter targets by trait requirement (Now supports comma-separated lists)
+      let validTargets = targetsArray;
+      if (rule.trait && rule.trait.trim() !== "") {
+          // Split the string by commas, trim whitespace, and drop any empty leftover strings
+          const reqTraits = rule.trait.split(",").map(t => t.trim().toLowerCase()).filter(t => t !== "");
+          
+          validTargets = targetsArray.filter(t => {
+              const actorTraits = t.actor?.system?.traits?.value || [];
+              // Check if the actor possesses AT LEAST ONE of the requested traits
+              return actorTraits.some(tr => reqTraits.includes(tr.toLowerCase()));
+          });
+      }
 
-        if (validTargets.length === 0) continue; 
+      if (validTargets.length === 0) continue; 
 
-        // Apply Condition
-        if (rule.conditionUuid) {
-            try {
-                const conditionItem = await fromUuid(rule.conditionUuid);
-                if (conditionItem) {
-                    for (let t of validTargets) {
-                        if (t.actor) await t.actor.createEmbeddedDocuments("Item", [conditionItem.toObject()]);
-                    }
-                    ui.notifications.info(`AoE Easy Resolve | Applied ${conditionItem.name}.`);
-                }
-            } catch(e) { console.error("AoE Easy Resolve | Error applying condition", e); }
-        }
+      // Apply Condition
+      if (rule.conditionUuid) {
+          try {
+              const conditionItem = await fromUuid(rule.conditionUuid);
+              if (conditionItem) {
+                  for (let t of validTargets) {
+                      if (t.actor) await t.actor.createEmbeddedDocuments("Item", [conditionItem.toObject()]);
+                  }
+                  ui.notifications.info(`AoE Easy Resolve | Applied ${conditionItem.name}.`);
+              }
+          } catch(e) { console.error("AoE Easy Resolve | Error applying condition", e); }
+      }
 
-        // Apply Bonus Damage
-        if (rule.damageFormula) {
-            try {
-                const formula = rule.damageType ? `(${rule.damageFormula})[${rule.damageType}]` : rule.damageFormula;
-                const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
-                const dRoll = await new pf2eDamageClass(formula).evaluate({ async: true });
+      // Apply Bonus Damage
+      if (rule.damageFormula) {
+          try {
+              const formula = rule.damageType ? `(${rule.damageFormula})[${rule.damageType}]` : rule.damageFormula;
+              const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
+              const dRoll = await new pf2eDamageClass(formula).evaluate({ async: true });
 
-                if (game.dice3d) await game.dice3d.showForRoll(dRoll, game.user, true);
+              if (game.dice3d) await game.dice3d.showForRoll(dRoll, game.user, true);
 
-                const outcomeLabels = { criticalSuccess: "Critical", success: "Hit/Success", failure: "Miss/Failure", criticalFailure: "Critical Miss" };
-                const traitNotice = rule.trait ? ` (vs ${rule.trait})` : "";
-                
-                await ChatMessage.create({
-                    speaker: ChatMessage.getSpeaker({ actor: messageActor }),
-                    flavor: `<strong>${outcomeLabels[outcomeStr]} Effect Damage!${traitNotice}</strong><br><span style="font-size: 0.9em; color: #555;">Triggered by: ${originItem.name}</span>`,
-                    content: await dRoll.render(),
-                    rolls: [dRoll]
-                });
-            } catch(e) { console.error("AoE Easy Resolve | Error rolling bonus damage", e); }
-        }
-    }
+              const outcomeLabels = { criticalSuccess: "Critical", success: "Hit/Success", failure: "Miss/Failure", criticalFailure: "Critical Miss" };
+              const traitNotice = rule.trait ? ` (vs ${rule.trait})` : "";
+              
+              await ChatMessage.create({
+                  speaker: ChatMessage.getSpeaker({ actor: messageActor }),
+                  flavor: `<strong>${outcomeLabels[outcomeStr]} Effect Damage!${traitNotice}</strong><br><span style="font-size: 0.9em; color: #555;">Triggered by: ${originItem.name}</span>`,
+                  content: await dRoll.render(),
+                  rolls: [dRoll]
+              });
+          } catch(e) { console.error("AoE Easy Resolve | Error rolling bonus damage", e); }
+      }
+  }
 }
 
 // --- INITIALIZATION ---
