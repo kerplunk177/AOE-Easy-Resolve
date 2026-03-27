@@ -41,7 +41,6 @@ function formatTargetsData(targetsObj) {
 }
 
 // --- CORE RULES ENGINE EXECUTOR ---
-// --- CORE RULES ENGINE EXECUTOR ---
 async function executeEffectRules(targetsArray, contextStr, outcomeStr, originItem, messageActor) {
   if (!originItem) return;
   const flags = originItem.flags?.[MODULE_ID] || {};
@@ -52,22 +51,18 @@ async function executeEffectRules(targetsArray, contextStr, outcomeStr, originIt
       if (rule.context !== contextStr) continue;
       if (rule.outcome !== outcomeStr) continue;
       
-      // Filter targets by trait requirement (Now supports comma-separated lists)
       let validTargets = targetsArray;
       if (rule.trait && rule.trait.trim() !== "") {
-          // Split the string by commas, trim whitespace, and drop any empty leftover strings
           const reqTraits = rule.trait.split(",").map(t => t.trim().toLowerCase()).filter(t => t !== "");
           
           validTargets = targetsArray.filter(t => {
               const actorTraits = t.actor?.system?.traits?.value || [];
-              // Check if the actor possesses AT LEAST ONE of the requested traits
               return actorTraits.some(tr => reqTraits.includes(tr.toLowerCase()));
           });
       }
 
       if (validTargets.length === 0) continue; 
 
-      // Apply Condition
       if (rule.conditionUuid) {
           try {
               const conditionItem = await fromUuid(rule.conditionUuid);
@@ -80,7 +75,6 @@ async function executeEffectRules(targetsArray, contextStr, outcomeStr, originIt
           } catch(e) { console.error("AoE Easy Resolve | Error applying condition", e); }
       }
 
-      // Apply Bonus Damage
       if (rule.damageFormula) {
           try {
               const formula = rule.damageType ? `(${rule.damageFormula})[${rule.damageType}]` : rule.damageFormula;
@@ -131,7 +125,6 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
   damageTypeOptions.sort((a, b) => a.label.localeCompare(b.label));
   damageTypeOptions.unshift({ key: "", label: "None / Untyped", selected: !flags.customDamageType ? "selected" : "" });
 
-  // Process the Rules array for Handlebars
   const rawRules = Array.isArray(flags.rules) ? flags.rules : Object.values(flags.rules || {});
   const processedRules = rawRules.map((r, i) => ({
       index: i,
@@ -167,20 +160,16 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
     processedRules: processedRules
   };
 
-  // Turn the rendered string directly into a jQuery object
   const $configHtml = $(await renderTemplate(templatePath, renderData));
 
   let insertTarget = html.find(".tab[data-tab='details']");
   if (insertTarget.length === 0) insertTarget = html.find("form");
   insertTarget.append($configHtml);
 
-  // Bind listeners strictly to our injected block
   $configHtml.find(".add-rule-btn").click(async (ev) => {
       ev.preventDefault();
       const currentRules = Array.isArray(flags.rules) ? [...flags.rules] : Object.values(flags.rules || {});
       currentRules.push({ context: "attack", outcome: "criticalSuccess", trait: "", conditionUuid: "", damageFormula: "", damageType: "" });
-      
-      // Use setFlag to safely manage the array state
       await app.item.setFlag(MODULE_ID, "rules", currentRules);
   });
 
@@ -189,7 +178,6 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
       const index = $(ev.currentTarget).data("index");
       const currentRules = Array.isArray(flags.rules) ? [...flags.rules] : Object.values(flags.rules || {});
       currentRules.splice(index, 1);
-      
       await app.item.setFlag(MODULE_ID, "rules", currentRules);
   });
 
@@ -200,7 +188,6 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
 Hooks.on("createChatMessage", async (message, options, userId) => {
   const flags = message.flags[MODULE_ID];
   
-  // 1. WHISPER ROUTER
   if (flags && flags.isSocketPayload) {
     if (!game.user.isGM) return;
     const firstActiveGM = game.users.find(u => u.isGM && u.active);
@@ -246,7 +233,6 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
     return;
   }
 
-  // 2. ATTACK ROLL RESOLUTION
   if (message.isAuthor) {
     const context = message.flags?.pf2e?.context;
     if (context && context.type === "attack-roll") {
@@ -257,7 +243,6 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
       if (!item) return;
 
       const targets = Array.from(game.user.targets);
-      // Fire the Rules Engine!
       await executeEffectRules(targets, "attack", outcome, item, message.actor);
     }
   }
@@ -270,7 +255,6 @@ Hooks.on("renderChatMessage", (message, html, data) => {
 
   const isRollCard = message.isRoll || message.rolls?.length > 0 || message.flags.pf2e?.context?.type;
   
-  // Custom Template Button logic
   if (item && flags.provideTemplate && !isRollCard) {
     if (html.find(".easy-resolve-custom-template-btn").length === 0) {
       const btnHtml = `<button type="button" class="easy-resolve-custom-template-btn" style="margin-top: 5px; border: 1px solid #7a7971; background: rgba(0, 0, 0, 0.1);"><i class="fas fa-ruler-combined"></i> Place Custom Template</button>`;
@@ -296,7 +280,6 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     }
   }
 
-  // Native PF2e Template Listener
   const templateButtons = html.find('[data-pf2-action="createTemplate"], .inline-template, button[data-action="spellTemplate"], button[data-action="place-template"], button:contains("burst"), button:contains("cone"), button:contains("line"), button:contains("emanation")');
   templateButtons.click((ev) => {
     const aoeFlags = item?.flags[MODULE_ID] || {};
@@ -725,6 +708,62 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
 
   if (targetedTokens.length === 0) { ui.notifications.info("AoE Easy Resolve | No tokens caught in the blast area."); return; }
 
+  // ==========================================
+  // NEW: GUARDIAN TAUNT INJECTION FOR AOE
+  // ==========================================
+  let tauntNoticeHtml = "";
+  const casterActor = cfg.originItem?.actor;
+  if (casterActor) {
+      const tauntEffect = casterActor.items.find(i => i.getFlag('world', 'guardianTaunter'));
+      if (tauntEffect) {
+          const guardianId = tauntEffect.getFlag('world', 'guardianTaunter');
+          let targetedAllies = false;
+          let targetedGuardian = false;
+
+          targetedTokens.forEach(t => {
+              if (t.actor?.id === guardianId) targetedGuardian = true;
+              else if (t.actor?.alliance === 'party') targetedAllies = true;
+          });
+
+          // Trap sprung: Allies hit, but the Guardian is safe
+          if (targetedAllies && !targetedGuardian) {
+              
+              // 1. Lower the DC of the card
+              if (cfg.saveDC) {
+                  cfg.saveDC -= 1;
+                  tauntNoticeHtml = `<div style="color: #d92c2c; background: rgba(217, 44, 44, 0.1); border: 1px solid #d92c2c; padding: 4px; text-align: center; font-weight: bold; margin-bottom: 6px;">Guardian Taunt Penalty:<br>DC Reduced by 1</div>`;
+              }
+
+              // 2. Slap them with Off-Guard
+              const alreadyOffGuard = casterActor.items.some(i => i.system?.slug === 'taunt-off-guard-penalty');
+              if (!alreadyOffGuard) {
+                  const offGuardEffect = {
+                      name: "Off-Guard (Taunt Penalty)",
+                      type: "effect",
+                      img: "systems/pf2e/icons/conditions/off-guard.webp",
+                      system: {
+                          slug: "taunt-off-guard-penalty",
+                          duration: { value: 1, unit: "rounds", expiry: "turn-start" },
+                          description: { value: "You ignored a Guardian's taunt. You are Off-Guard." },
+                          rules: [
+                              { key: "FlatModifier", selector: "ac", value: -2, type: "circumstance" },
+                              { key: "RollOption", domain: "all", option: "off-guard" }
+                          ]
+                      }
+                  };
+                  casterActor.createEmbeddedDocuments("Item", [offGuardEffect]);
+                  
+                  ChatMessage.create({
+                      speaker: ChatMessage.getSpeaker({ actor: casterActor }),
+                      flavor: `<strong>Taunt Penalty Triggered!</strong>`,
+                      content: `Because ${casterActor.name} caught an ally in their blast without including their taunter, their DC was reduced, and they are now <strong>Off-Guard</strong> until the start of their next turn.`
+                  });
+              }
+          }
+      }
+  }
+  // ==========================================
+
   const itemTraits = cfg.originItem?.system?.traits?.value || [];
   const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
   const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
@@ -750,10 +789,15 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
   const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
   const formattedSaveType = cfg.saveType.charAt(0).toUpperCase() + cfg.saveType.slice(1);
   
-  const htmlContent = await renderTemplate(templatePath, { 
+  let htmlContent = await renderTemplate(templatePath, { 
     targets: formatTargetsData(targetsData), itemName: cfg.itemName, saveType: formattedSaveType, saveDC: cfg.saveDC,
     damageTotal: null, damageBreakdown: null, damageFormula: null, damageTooltip: null, isGM: game.user.isGM
   });
+
+  // Attach the penalty warning to the top of the card if the trap was triggered
+  if (tauntNoticeHtml) {
+      htmlContent = tauntNoticeHtml + htmlContent;
+  }
 
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker(), content: htmlContent,
