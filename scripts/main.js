@@ -705,8 +705,14 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
     const center = token.center;
     return templateObj.shape.contains(center.x - templateDoc.x, center.y - templateDoc.y);
   });
-
-  if (targetedTokens.length === 0) { ui.notifications.info("AoE Easy Resolve | No tokens caught in the blast area."); return; }
+  if (targetedTokens.length === 0) { 
+    ui.notifications.info("AoE Easy Resolve | No tokens caught in the blast area."); 
+    // Auto-evaporate empty templates to keep the canvas clean
+    setTimeout(async () => {
+      try { await canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", [templateDoc.id]); } catch(e) {}
+    }, 100);
+    return; 
+  }
 
   // ==========================================
   // NEW: GUARDIAN TAUNT INJECTION FOR AOE
@@ -864,7 +870,7 @@ Hooks.on("createMeasuredTemplate", async (templateDoc, options, userId) => {
       }
 
       await generateTemplateCard(templateObj, templateDoc, {
-        itemName: cache.name, saveType: saveType, saveDC: saveDC, isBasicSave: isBasicSave, originItem: originItem, hazardDamage: null
+        itemName: cache.name, saveType: saveType, saveDC: saveDC, isBasicSave: isBasicSave, originItem: originItem, hazardDamage: cache.hazardDamage || null
       });
 
       if (canvas.activeLayer.name !== "TokenLayer") canvas.tokens.activate();

@@ -2,7 +2,7 @@
   "id": "aoe-easy-resolve",
   "title": "AoE Easy Resolve",
   "description": "Automates targeted saving throws and damage application from measured templates for PF2e and SF2e.",
-  "version": "v2.0",
+  "version": "v2.1",
   "author": "Sean Wright",
 
 
@@ -22,5 +22,5 @@
     "modules/aoe-easy-resolve/templates/item-config.hbs"
   ],
     "manifest": "https://raw.githubusercontent.com/kerplunk177/AOE-Easy-Resolve/main/module.json",
-  "download": "https://github.com/kerplunk177/AOE-Easy-Resolve/releases/download/v2.0/module.zip"
+  "download": "https://github.com/kerplunk177/AOE-Easy-Resolve/releases/download/v2.1/module.zip"
 }
