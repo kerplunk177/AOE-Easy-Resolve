@@ -268,13 +268,44 @@ Hooks.on("renderChatMessage", (message, html, data) => {
           type: flags.useOverride ? flags.saveType : (item.system?.defense?.save?.statistic || "reflex")
         };
 
-        const toolMap = { "cone": "cone", "circle": "circle", "ray": "ray", "rect": "rect" };
-        const selectedTool = toolMap[flags.templateType || "cone"];
+        // Stripped "rect" from the dictionary. PF2e native shapes only!
+        const toolMapPF2e = { "cone": "cone", "circle": "burst", "ray": "line" };
+        
+        // Failsafe: if a lingering rect flag exists, default back to cone
+        const pf2eType = toolMapPF2e[flags.templateType] || "cone"; 
         const targetDistance = flags.templateDistance || 15;
 
-        canvas.templates.activate();
-        const measureControl = ui.controls.controls.find(c => c.name === "measure");
-        if (measureControl) { measureControl.activeTool = selectedTool; ui.controls.render(); }
+        const linkText = `@Template[type:${pf2eType}|distance:${targetDistance}]`;
+        
+        // Wrap the tag in a div to guarantee a stable DOM tree
+        const wrapperText = `<div>${linkText}</div>`;
+        const enriched = await TextEditor.enrichHTML(wrapperText, { async: true });
+        
+        const ghostContainer = document.createElement("div");
+        ghostContainer.style.display = "none";
+        
+        if (typeof enriched === "string") {
+            ghostContainer.innerHTML = enriched;
+        } else {
+            ghostContainer.appendChild(enriched);
+        }
+        
+        // Attach to the chat card so PF2e's chat-log-scoped event listeners hear the click
+        ev.currentTarget.parentNode.appendChild(ghostContainer);
+        
+        const wrapperDiv = ghostContainer.firstElementChild;
+        const ghostBtn = wrapperDiv ? wrapperDiv.firstElementChild : null;
+        
+        if (ghostBtn) {
+            // Dispatch a true mouse event to wake up the system listener
+            ghostBtn.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
+        } else {
+            console.error("AoE Easy Resolve | Enrichment Failed. Raw output:", ghostContainer.innerHTML);
+            ui.notifications.error("AoE Easy Resolve | Auto-click failed. Check console (F12).");
+        }
+        
+        setTimeout(() => ghostContainer.remove(), 100);
+
         ui.notifications.info(`AoE Easy Resolve | Draw your template! It will auto-size to ${targetDistance}ft.`);
       });
     }
