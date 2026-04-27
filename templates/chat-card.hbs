@@ -14,26 +14,33 @@
 
   <div class="targets-section" style="display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px;">
     {{#each targets}}
-      <div class="target-row" style="display: flex; align-items: center; background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 4px;">
+      <div class="target-row" data-token-id="{{id}}" style="display: flex; align-items: center; background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 4px;">
         <img src="{{img}}" width="30" height="30" style="border: none; margin-right: 10px;" />
         <div class="target-name" style="flex: 1; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{name}}">{{name}}</div>
         
-        <div class="target-save" style="flex: 0 0 80px; text-align: right;">
+        <div class="target-save" style="flex: 0 0 105px; text-align: right;">
           {{#if isHealing}}
-            <div style="font-weight: bold; color: #4ade80; text-shadow: 1px 1px 2px black; font-size: 1.1em; padding-top: 4px;" title="Target receives healing automatically">Healing</div>
+            <div data-token-id="{{id}}" style="font-weight: bold; color: #4ade80; text-shadow: 1px 1px 2px black; font-size: 1.1em; padding-top: 4px;" title="Target receives healing automatically">Healing</div>
           {{else if isImmune}}
             <div style="font-weight: bold; color: #9ca3af; font-size: 1.1em; padding-top: 4px;" title="Target is immune to this effect">Immune</div>
           {{else if hasRolled}}
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-              <div style="font-weight: bold; font-size: 1.1em;" title="{{rollTooltip}}">{{rollTotal}}</div>
-              <div style="font-size: 0.8em; color: {{dosColor}};">
-                {{dosLabel}}
-              </div>
-              {{#if showUnadjusted}}
-                <div style="font-size: 0.7em; color: #888; text-decoration: line-through;" title="Original unadjusted result">
-                  {{unadjustedDosLabel}}
+            <div style="display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 5px;">
+              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                <div style="font-weight: bold; font-size: 1.1em;" title="{{rollTooltip}}">{{rollTotal}}</div>
+                <div style="font-size: 0.8em; color: {{dosColor}};">
+                  {{dosLabel}}
                 </div>
-              {{/if}}
+                {{#if showUnadjusted}}
+                  <div style="font-size: 0.7em; color: #888; text-decoration: line-through;" title="Original unadjusted result">
+                    {{unadjustedDosLabel}}
+                  </div>
+                {{/if}}
+              </div>
+              {{#unless hasUsedHeroPoint}}
+                <button class="hero-point-btn" data-token-id="{{id}}" style="padding: 2px 4px; line-height: 1; font-size: 0.9em; flex: 0 0 auto; background: rgba(255, 215, 0, 0.1); border: 1px solid #cca900; color: #cca900; border-radius: 3px;" title="Spend a Hero Point to Reroll">
+                  <i class="fas fa-hospital-symbol"></i>
+                </button>
+              {{/unless}}
             </div>
           {{else}}
             <button class="roll-save-btn" data-token-id="{{id}}" style="padding: 2px 5px; font-size: 0.9em; width: 100%;">

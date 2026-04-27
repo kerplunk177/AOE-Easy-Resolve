@@ -205,7 +205,8 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
           await targetMessage.update({ 
             [updateKey]: {
               hasRolled: true, rollTotal: data.rollTotal, rollFormula: data.rollFormula,
-              rollTooltip: data.rollTooltip, degreeOfSuccess: data.dos, unadjustedDegreeOfSuccess: data.unadjustedDos
+              rollTooltip: data.rollTooltip, degreeOfSuccess: data.dos, unadjustedDegreeOfSuccess: data.unadjustedDos,
+              hasUsedHeroPoint: data.hasUsedHeroPoint || false
             } 
           });
         } else if (data.action === "updateDamageRoll") {
@@ -463,6 +464,13 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     const saveType = aoeData.saveType || "reflex";
     const saveDC = aoeData.saveDC;
     
+    // --- BULWARK INJECTION (HOISTED FOR PERFORMANCE) ---
+    let originItem = null;
+    if (aoeData.itemUuid) { try { originItem = await fromUuid(aoeData.itemUuid); } catch(e){} }
+    const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
+    const extraRollOptions = (saveType === "reflex" && hasDamage) ? ["damaging-effect"] : [];
+    // ---------------------------------------------------
+
     const npcsToRoll = [];
     for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
       if (targetData.hasRolled || targetData.isHealing || targetData.isImmune) continue;
@@ -476,6 +484,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     for (const {tokenId, token} of npcsToRoll) {
       const rollOptions = { event: event, createMessage: false, skipDialog: true };
       if (saveDC) rollOptions.dc = { value: saveDC };
+      if (extraRollOptions.length > 0) rollOptions.extraRollOptions = extraRollOptions; // Apply Bulwark traits
       
       const rollResult = await token.actor.saves[saveType].roll(rollOptions);
       if (!rollResult) continue;
@@ -529,8 +538,15 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     const saveType = aoeData.saveType || "reflex";
     const saveDC = aoeData.saveDC;
 
+    // --- BULWARK INJECTION ---
+    let originItem = null;
+    if (aoeData.itemUuid) { try { originItem = await fromUuid(aoeData.itemUuid); } catch(e){} }
+    const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
+    // -------------------------
+
     const rollOptions = { event: event, createMessage: false };
     if (saveDC) rollOptions.dc = { value: saveDC };
+    if (saveType === "reflex" && hasDamage) rollOptions.extraRollOptions = ["damaging-effect"]; // Apply Bulwark traits
     
     const rollResult = await token.actor.saves[saveType].roll(rollOptions);
     if (!rollResult) return;
@@ -574,6 +590,92 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       await ChatMessage.create({
         whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
         flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos } } }
+      });
+    }
+  });
+  html.find(".hero-point-btn").click(async (event) => {
+    event.preventDefault();
+    const tokenId = event.currentTarget.dataset.tokenId;
+    const token = canvas.tokens.get(tokenId);
+    
+    // Security check: Must exist and the player clicking must own the sheet
+    if (!token || !token.actor || !token.actor.isOwner) return;
+
+    // 1. The Bouncer: Do they actually have a Hero Point to spend?
+    const hpPath = token.actor.system.resources?.heroPoints;
+    if (!hpPath || hpPath.value < 1) {
+        return ui.notifications.warn(`AoE Easy Resolve | ${token.name} does not have any Hero Points left to spend!`);
+    }
+
+    // 2. The Toll: Deduct the point and announce the cinematic moment
+    await token.actor.update({ "system.resources.heroPoints.value": hpPath.value - 1 });
+    ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor: token.actor }),
+        flavor: `<strong>Heroic Reroll!</strong>`,
+        content: `${token.name} taps into their heroic resolve and spends a Hero Point to reroll their save.`
+    });
+
+    // 3. The Execution: Fetch the hazard data just like a normal save
+    const aoeData = message.flags[MODULE_ID] || {};
+    const saveType = aoeData.saveType || "reflex";
+    const saveDC = aoeData.saveDC;
+
+    let originItem = null;
+    if (aoeData.itemUuid) { try { originItem = await fromUuid(aoeData.itemUuid); } catch(e){} }
+    const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
+
+    const rollOptions = { event: event, createMessage: false };
+    if (saveDC) rollOptions.dc = { value: saveDC };
+    
+    // Tag the roll natively with fortune, and carry over our Bulwark logic!
+    let extraTraits = ["fortune"];
+    if (saveType === "reflex" && hasDamage) extraTraits.push("damaging-effect");
+    rollOptions.extraRollOptions = extraTraits;
+    
+    const rollResult = await token.actor.saves[saveType].roll(rollOptions);
+    if (!rollResult) return;
+  
+    if (game.dice3d) await game.dice3d.showForRoll(rollResult, game.user, true);
+
+    let d20 = 10;
+    const d20Term = rollResult.terms?.find(t => t.faces === 20);
+    if (d20Term) d20 = d20Term.results?.[0]?.result ?? d20Term.total ?? 10;
+    else if (rollResult.dice?.[0]) d20 = rollResult.dice[0].results?.[0]?.result ?? rollResult.dice[0].total ?? 10;
+
+    const modifier = rollResult.total - d20;
+    const modSign = modifier >= 0 ? "+" : "-";
+    const rollTooltip = `(${d20} ${modSign} ${Math.abs(modifier)})`;
+
+    const rawDosValue = getUnadjustedDos(rollResult.total, saveDC, d20);
+    const finalDosValue = rollResult.degreeOfSuccess ?? rollResult.options?.degreeOfSuccess;
+
+    const dosMap = { 0: "criticalFailure", 1: "failure", 2: "success", 3: "criticalSuccess" };
+    let dos = finalDosValue !== undefined ? dosMap[finalDosValue] : "success";
+    let unadjustedDos = rawDosValue !== undefined ? dosMap[rawDosValue] : dos;
+  
+    // 4. The Write-Back: Overwrite the previous garbage roll with the new heroic outcome
+    // 4. The Write-Back: Overwrite the previous garbage roll and lock out future rerolls
+    if (game.user.isGM) {
+      const updateKey = `flags.${MODULE_ID}.targets.${tokenId}`;
+      await message.update({ 
+        [updateKey]: { hasRolled: true, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, degreeOfSuccess: dos, unadjustedDegreeOfSuccess: unadjustedDos, hasUsedHeroPoint: true } 
+      });
+
+      const freshMessage = game.messages.get(message.id);
+      const freshAoeData = freshMessage.flags[MODULE_ID];
+      const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+      const formattedSaveType = saveType.charAt(0).toUpperCase() + saveType.slice(1);
+      
+      const newHtmlContent = await renderTemplate(templatePath, { 
+        targets: formatTargetsData(freshAoeData.targets), itemName: freshAoeData.itemName,
+        saveType: formattedSaveType, saveDC: saveDC, damageTotal: freshAoeData.damageTotal,
+        damageBreakdown: freshAoeData.damageBreakdown, damageFormula: freshAoeData.damageFormula, damageTooltip: freshAoeData.damageTooltip, isGM: game.user.isGM
+      });
+      await freshMessage.update({ content: newHtmlContent });
+    } else {
+      await ChatMessage.create({
+        whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
+        flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos, hasUsedHeroPoint: true } } }
       });
     }
   });
