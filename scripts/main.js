@@ -17,6 +17,37 @@ function getUnadjustedDos(total, dc, d20) {
   
   return dos;
 }
+function buildRollTooltip(actor, saveType, rollResult, d20, modifier) {
+  const modSign = modifier >= 0 ? "+" : "-";
+  let fallback = `(${d20} ${modSign} ${Math.abs(modifier)})`;
+  
+  try {
+    // PF2e CheckRolls wipe the modifiers array if no ChatMessage is created.
+    // We bypass the roll and rip the math directly off the character sheet!
+    let rawMods = actor?.saves?.[saveType]?.modifiers || [];
+    
+    if (Array.isArray(rawMods) && rawMods.length > 0) {
+      const activeMods = rawMods
+        .filter(m => m.enabled && !m.ignored)
+        .map(m => `${m.label} ${m.modifier >= 0 ? '+' : ''}${m.modifier}`);
+        
+      // If the roll used a situational trait (like Bulwark) that isn't active on the base sheet, 
+      // the math won't add up perfectly. We catch that difference and append it!
+      const baseSum = rawMods.filter(m => m.enabled && !m.ignored).reduce((acc, m) => acc + m.modifier, 0);
+      if (baseSum !== modifier) {
+         const diff = modifier - baseSum;
+         activeMods.push(`Situational ${diff >= 0 ? '+' : ''}${diff}`);
+      }
+
+      if (activeMods.length > 0) {
+        return `d20: ${d20} | ${activeMods.join(', ')}`;
+      }
+    }
+  } catch (e) {
+    console.warn("AoE Easy Resolve | Failed to extract native modifiers for tooltip.", e);
+  }
+  return fallback;
+}
 
 function formatTargetsData(targetsObj) {
   const dosMap = {
@@ -496,8 +527,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       else if (rollResult.dice?.[0]) d20 = rollResult.dice[0].results?.[0]?.result ?? rollResult.dice[0].total ?? 10;
 
       const modifier = rollResult.total - d20;
-      const modSign = modifier >= 0 ? "+" : "-";
-      const rollTooltip = `(${d20} ${modSign} ${Math.abs(modifier)})`;
+      const rollTooltip = buildRollTooltip(token.actor, saveType, rollResult, d20, modifier);
 
       const rawDosValue = getUnadjustedDos(rollResult.total, saveDC, d20);
       const finalDosValue = rollResult.degreeOfSuccess ?? rollResult.options?.degreeOfSuccess;
@@ -559,8 +589,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     else if (rollResult.dice?.[0]) d20 = rollResult.dice[0].results?.[0]?.result ?? rollResult.dice[0].total ?? 10;
 
     const modifier = rollResult.total - d20;
-    const modSign = modifier >= 0 ? "+" : "-";
-    const rollTooltip = `(${d20} ${modSign} ${Math.abs(modifier)})`;
+    const rollTooltip = buildRollTooltip(token.actor, saveType, rollResult, d20, modifier);
 
     const rawDosValue = getUnadjustedDos(rollResult.total, saveDC, d20);
     const finalDosValue = rollResult.degreeOfSuccess ?? rollResult.options?.degreeOfSuccess;
@@ -643,8 +672,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     else if (rollResult.dice?.[0]) d20 = rollResult.dice[0].results?.[0]?.result ?? rollResult.dice[0].total ?? 10;
 
     const modifier = rollResult.total - d20;
-    const modSign = modifier >= 0 ? "+" : "-";
-    const rollTooltip = `(${d20} ${modSign} ${Math.abs(modifier)})`;
+    const rollTooltip = buildRollTooltip(token.actor, saveType, rollResult, d20, modifier);
 
     const rawDosValue = getUnadjustedDos(rollResult.total, saveDC, d20);
     const finalDosValue = rollResult.degreeOfSuccess ?? rollResult.options?.degreeOfSuccess;
@@ -653,8 +681,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     let dos = finalDosValue !== undefined ? dosMap[finalDosValue] : "success";
     let unadjustedDos = rawDosValue !== undefined ? dosMap[rawDosValue] : dos;
   
-    // 4. The Write-Back: Overwrite the previous garbage roll with the new heroic outcome
-    // 4. The Write-Back: Overwrite the previous garbage roll and lock out future rerolls
+
     if (game.user.isGM) {
       const updateKey = `flags.${MODULE_ID}.targets.${tokenId}`;
       await message.update({ 
@@ -679,7 +706,48 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       });
     }
   });
+  html.find(".step-dos-btn").click(async (event) => {
+    event.preventDefault();
+    if (!game.user.isGM) return; // Strict security check
 
+    const tokenId = event.currentTarget.dataset.tokenId;
+    const direction = event.currentTarget.dataset.direction;
+    
+    const freshMessage = game.messages.get(message.id);
+    const aoeData = freshMessage.flags[MODULE_ID];
+    const targetData = aoeData.targets[tokenId];
+    
+    if (!targetData || !targetData.hasRolled) return;
+
+    // The official PF2e hierarchy
+    const dosOrder = ["criticalFailure", "failure", "success", "criticalSuccess"];
+    let currentIndex = dosOrder.indexOf(targetData.degreeOfSuccess);
+    if (currentIndex === -1) currentIndex = 1; 
+
+    // Clamp the limits so we don't step out of bounds
+    if (direction === "up" && currentIndex < 3) currentIndex++;
+    else if (direction === "down" && currentIndex > 0) currentIndex--;
+    else return; 
+
+    const newDos = dosOrder[currentIndex];
+
+    // The Write-Back
+    const updateKey = `flags.${MODULE_ID}.targets.${tokenId}.degreeOfSuccess`;
+    await freshMessage.update({ [updateKey]: newDos });
+
+    // Instantly Re-render the UI
+    const updatedMessage = game.messages.get(message.id);
+    const updatedAoeData = updatedMessage.flags[MODULE_ID];
+    const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+    const formattedSaveType = updatedAoeData.saveType.charAt(0).toUpperCase() + updatedAoeData.saveType.slice(1);
+    
+    const newHtmlContent = await renderTemplate(templatePath, { 
+      targets: formatTargetsData(updatedAoeData.targets), itemName: updatedAoeData.itemName,
+      saveType: formattedSaveType, saveDC: updatedAoeData.saveDC, damageTotal: updatedAoeData.damageTotal,
+      damageBreakdown: updatedAoeData.damageBreakdown, damageFormula: updatedAoeData.damageFormula, damageTooltip: updatedAoeData.damageTooltip, isGM: game.user.isGM
+    });
+    await updatedMessage.update({ content: newHtmlContent });
+  });
   html.find(".apply-damage-btn").click(async (event) => {
     event.preventDefault();
     const freshMessage = game.messages.get(message.id);
