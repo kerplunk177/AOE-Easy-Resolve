@@ -22,8 +22,6 @@ function buildRollTooltip(actor, saveType, rollResult, d20, modifier) {
   let fallback = `(${d20} ${modSign} ${Math.abs(modifier)})`;
   
   try {
-    // PF2e CheckRolls wipe the modifiers array if no ChatMessage is created.
-    // We bypass the roll and rip the math directly off the character sheet!
     let rawMods = actor?.saves?.[saveType]?.modifiers || [];
     
     if (Array.isArray(rawMods) && rawMods.length > 0) {
@@ -31,8 +29,6 @@ function buildRollTooltip(actor, saveType, rollResult, d20, modifier) {
         .filter(m => m.enabled && !m.ignored)
         .map(m => `${m.label} ${m.modifier >= 0 ? '+' : ''}${m.modifier}`);
         
-      // If the roll used a situational trait (like Bulwark) that isn't active on the base sheet, 
-      // the math won't add up perfectly. We catch that difference and append it!
       const baseSum = rawMods.filter(m => m.enabled && !m.ignored).reduce((acc, m) => acc + m.modifier, 0);
       if (baseSum !== modifier) {
          const diff = modifier - baseSum;
@@ -197,14 +193,14 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
   if (insertTarget.length === 0) insertTarget = html.find("form");
   insertTarget.append($configHtml);
 
-  $configHtml.find(".add-rule-btn").click(async (ev) => {
+  $configHtml.find(".add-rule-btn").off("click").on("click", async (ev) => {
       ev.preventDefault();
       const currentRules = Array.isArray(flags.rules) ? [...flags.rules] : Object.values(flags.rules || {});
       currentRules.push({ context: "attack", outcome: "criticalSuccess", trait: "", conditionUuid: "", damageFormula: "", damageType: "" });
       await app.item.setFlag(MODULE_ID, "rules", currentRules);
   });
 
-  $configHtml.find(".delete-rule-btn").click(async (ev) => {
+  $configHtml.find(".delete-rule-btn").off("click").on("click", async (ev) => {
       ev.preventDefault();
       const index = $(ev.currentTarget).data("index");
       const currentRules = Array.isArray(flags.rules) ? [...flags.rules] : Object.values(flags.rules || {});
@@ -292,7 +288,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       const btnHtml = `<button type="button" class="easy-resolve-custom-template-btn" style="margin-top: 5px; border: 1px solid #7a7971; background: rgba(0, 0, 0, 0.1);"><i class="fas fa-ruler-combined"></i> Place Custom Template</button>`;
       html.find(".message-content").append(btnHtml);
 
-      html.find(".easy-resolve-custom-template-btn").click(async (ev) => {
+      html.find(".easy-resolve-custom-template-btn").off("click").on("click", async (ev) => {
         ev.preventDefault();
         window.aoeEasyResolveCache = {
           item: item, name: item.name,
@@ -300,16 +296,11 @@ Hooks.on("renderChatMessage", (message, html, data) => {
           type: flags.useOverride ? flags.saveType : (item.system?.defense?.save?.statistic || "reflex")
         };
 
-        // Stripped "rect" from the dictionary. PF2e native shapes only!
         const toolMapPF2e = { "cone": "cone", "circle": "burst", "ray": "line" };
-        
-        // Failsafe: if a lingering rect flag exists, default back to cone
         const pf2eType = toolMapPF2e[flags.templateType] || "cone"; 
         const targetDistance = flags.templateDistance || 15;
 
         const linkText = `@Template[type:${pf2eType}|distance:${targetDistance}]`;
-        
-        // Wrap the tag in a div to guarantee a stable DOM tree
         const wrapperText = `<div>${linkText}</div>`;
         const enriched = await TextEditor.enrichHTML(wrapperText, { async: true });
         
@@ -322,14 +313,12 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             ghostContainer.appendChild(enriched);
         }
         
-        // Attach to the chat card so PF2e's chat-log-scoped event listeners hear the click
         ev.currentTarget.parentNode.appendChild(ghostContainer);
         
         const wrapperDiv = ghostContainer.firstElementChild;
         const ghostBtn = wrapperDiv ? wrapperDiv.firstElementChild : null;
         
         if (ghostBtn) {
-            // Dispatch a true mouse event to wake up the system listener
             ghostBtn.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
         } else {
             console.error("AoE Easy Resolve | Enrichment Failed. Raw output:", ghostContainer.innerHTML);
@@ -344,7 +333,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
   }
 
   const templateButtons = html.find('[data-pf2-action="createTemplate"], .inline-template, button[data-action="spellTemplate"], button[data-action="place-template"], button:contains("burst"), button:contains("cone"), button:contains("line"), button:contains("emanation")');
-  templateButtons.click((ev) => {
+  templateButtons.off("click").on("click", (ev) => {
     const aoeFlags = item?.flags[MODULE_ID] || {};
     let fallbackName = item?.name || "AoE Effects";
     if (!item && message.flavor) fallbackName = message.flavor.replace(/<[^>]*>?/gm, '').trim();
@@ -385,7 +374,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     }
   });
 
-  html.find(".roll-damage-btn").click(async (event) => {
+  html.find(".roll-damage-btn").off("click").on("click", async (event) => {
     event.preventDefault();
     const aoeData = message.flags[MODULE_ID];
     
@@ -487,7 +476,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     }
   });
 
-  html.find(".roll-all-npcs-btn").click(async (event) => {
+  html.find(".roll-all-npcs-btn").off("click").on("click", async (event) => {
     event.preventDefault();
     const aoeData = message.flags[MODULE_ID];
     if (!aoeData || !aoeData.targets) return;
@@ -495,12 +484,10 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     const saveType = aoeData.saveType || "reflex";
     const saveDC = aoeData.saveDC;
     
-    // --- BULWARK INJECTION (HOISTED FOR PERFORMANCE) ---
     let originItem = null;
     if (aoeData.itemUuid) { try { originItem = await fromUuid(aoeData.itemUuid); } catch(e){} }
     const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
     const extraRollOptions = (saveType === "reflex" && hasDamage) ? ["damaging-effect"] : [];
-    // ---------------------------------------------------
 
     const npcsToRoll = [];
     for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
@@ -515,7 +502,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     for (const {tokenId, token} of npcsToRoll) {
       const rollOptions = { event: event, createMessage: false, skipDialog: true };
       if (saveDC) rollOptions.dc = { value: saveDC };
-      if (extraRollOptions.length > 0) rollOptions.extraRollOptions = extraRollOptions; // Apply Bulwark traits
+      if (extraRollOptions.length > 0) rollOptions.extraRollOptions = extraRollOptions;
       
       const rollResult = await token.actor.saves[saveType].roll(rollOptions);
       if (!rollResult) continue;
@@ -558,7 +545,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       }
   });
 
-  html.find(".roll-save-btn").click(async (event) => {
+  html.find(".roll-save-btn").off("click").on("click", async (event) => {
     event.preventDefault();
     const tokenId = event.currentTarget.dataset.tokenId;
     const token = canvas.tokens.get(tokenId);
@@ -568,15 +555,13 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     const saveType = aoeData.saveType || "reflex";
     const saveDC = aoeData.saveDC;
 
-    // --- BULWARK INJECTION ---
     let originItem = null;
     if (aoeData.itemUuid) { try { originItem = await fromUuid(aoeData.itemUuid); } catch(e){} }
     const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
-    // -------------------------
 
     const rollOptions = { event: event, createMessage: false };
     if (saveDC) rollOptions.dc = { value: saveDC };
-    if (saveType === "reflex" && hasDamage) rollOptions.extraRollOptions = ["damaging-effect"]; // Apply Bulwark traits
+    if (saveType === "reflex" && hasDamage) rollOptions.extraRollOptions = ["damaging-effect"]; 
     
     const rollResult = await token.actor.saves[saveType].roll(rollOptions);
     if (!rollResult) return;
@@ -622,21 +607,19 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       });
     }
   });
-  html.find(".hero-point-btn").click(async (event) => {
+
+  html.find(".hero-point-btn").off("click").on("click", async (event) => {
     event.preventDefault();
     const tokenId = event.currentTarget.dataset.tokenId;
     const token = canvas.tokens.get(tokenId);
     
-    // Security check: Must exist and the player clicking must own the sheet
     if (!token || !token.actor || !token.actor.isOwner) return;
 
-    // 1. The Bouncer: Do they actually have a Hero Point to spend?
     const hpPath = token.actor.system.resources?.heroPoints;
     if (!hpPath || hpPath.value < 1) {
         return ui.notifications.warn(`AoE Easy Resolve | ${token.name} does not have any Hero Points left to spend!`);
     }
 
-    // 2. The Toll: Deduct the point and announce the cinematic moment
     await token.actor.update({ "system.resources.heroPoints.value": hpPath.value - 1 });
     ChatMessage.create({
         speaker: ChatMessage.getSpeaker({ actor: token.actor }),
@@ -644,7 +627,6 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         content: `${token.name} taps into their heroic resolve and spends a Hero Point to reroll their save.`
     });
 
-    // 3. The Execution: Fetch the hazard data just like a normal save
     const aoeData = message.flags[MODULE_ID] || {};
     const saveType = aoeData.saveType || "reflex";
     const saveDC = aoeData.saveDC;
@@ -656,7 +638,6 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     const rollOptions = { event: event, createMessage: false };
     if (saveDC) rollOptions.dc = { value: saveDC };
     
-    // Tag the roll natively with fortune, and carry over our Bulwark logic!
     let extraTraits = ["fortune"];
     if (saveType === "reflex" && hasDamage) extraTraits.push("damaging-effect");
     rollOptions.extraRollOptions = extraTraits;
@@ -681,7 +662,6 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     let dos = finalDosValue !== undefined ? dosMap[finalDosValue] : "success";
     let unadjustedDos = rawDosValue !== undefined ? dosMap[rawDosValue] : dos;
   
-
     if (game.user.isGM) {
       const updateKey = `flags.${MODULE_ID}.targets.${tokenId}`;
       await message.update({ 
@@ -706,9 +686,10 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       });
     }
   });
-  html.find(".step-dos-btn").click(async (event) => {
+
+  html.find(".step-dos-btn").off("click").on("click", async (event) => {
     event.preventDefault();
-    if (!game.user.isGM) return; // Strict security check
+    if (!game.user.isGM) return; 
 
     const tokenId = event.currentTarget.dataset.tokenId;
     const direction = event.currentTarget.dataset.direction;
@@ -719,23 +700,19 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     
     if (!targetData || !targetData.hasRolled) return;
 
-    // The official PF2e hierarchy
     const dosOrder = ["criticalFailure", "failure", "success", "criticalSuccess"];
     let currentIndex = dosOrder.indexOf(targetData.degreeOfSuccess);
     if (currentIndex === -1) currentIndex = 1; 
 
-    // Clamp the limits so we don't step out of bounds
     if (direction === "up" && currentIndex < 3) currentIndex++;
     else if (direction === "down" && currentIndex > 0) currentIndex--;
     else return; 
 
     const newDos = dosOrder[currentIndex];
 
-    // The Write-Back
     const updateKey = `flags.${MODULE_ID}.targets.${tokenId}.degreeOfSuccess`;
     await freshMessage.update({ [updateKey]: newDos });
 
-    // Instantly Re-render the UI
     const updatedMessage = game.messages.get(message.id);
     const updatedAoeData = updatedMessage.flags[MODULE_ID];
     const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
@@ -748,7 +725,8 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     });
     await updatedMessage.update({ content: newHtmlContent });
   });
-  html.find(".apply-damage-btn").click(async (event) => {
+
+  html.find(".apply-damage-btn").off("click").on("click", async (event) => {
     event.preventDefault();
     const freshMessage = game.messages.get(message.id);
     const aoeData = freshMessage.flags[MODULE_ID];
@@ -771,9 +749,15 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     const itemHasDamage = (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || (aoeFlags.useCustomDamage && aoeFlags.customDamage) || aoeData.hazardDamage;
     if (itemHasDamage && !aoeData.damageTotal) needsDamageWarning = true;
 
+    // PREVENT DOUBLE PROCESSING: Track changes and commit once
+    let msgUpdates = {};
+
     for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
       const token = canvas.tokens.get(tokenId);
       if (!token || !token.actor) continue;
+      
+      // If we already successfully applied healing/damage to this target, skip them
+      if (targetData.hasApplied) continue; 
 
       const negativeHealing = token.actor.system.attributes.hp?.negativeHealing || false;
       const itemTraits = originItem?.system?.traits?.value || [];
@@ -789,13 +773,14 @@ Hooks.on("renderChatMessage", (message, html, data) => {
       else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
 
       if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) effectType = negativeHealing ? "none" : "heal";
-      if (effectType === "none") { processedCount++; continue; }
+      if (effectType === "none") { processedCount++; msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true; continue; }
 
       const isHealEffect = effectType === "heal";
       if (!targetData.hasRolled && !isHealEffect) continue;
 
       const dos = targetData.degreeOfSuccess || "failure"; 
       processedCount++; 
+      msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true; // Mark them as processed
 
       if (aoeData.damageTotal) {
         let multiplier = 0;
@@ -831,9 +816,18 @@ Hooks.on("renderChatMessage", (message, html, data) => {
             if (canvas.ready && actualHealed > 0) {
               canvas.interface.createScrollingText(token.center, `+${actualHealed}`, { anchor: CONST.TEXT_ANCHOR_POINTS.TOP, fill: 0x4ade80, direction: CONST.TEXT_ANCHOR_POINTS.UP });
             }
+            
+            // FIX: Assign proper speaker and PF2e native flags so Forensics sees it perfectly
             await ChatMessage.create({
-              speaker: ChatMessage.getSpeaker({ token: token.document }), flavor: `<strong>${originItem ? originItem.name : "Healing"}</strong>`,
-              content: `<div class="dice-roll"><div class="dice-result"><div class="dice-total" style="color: #1e8b42; background: rgba(74, 222, 128, 0.1);">${actualHealed} Healing</div></div></div>`
+              speaker: originItem && originItem.actor ? ChatMessage.getSpeaker({ actor: originItem.actor }) : message.speaker,
+              flavor: `<strong>${originItem ? originItem.name : "Healing"}</strong>`,
+              content: `<div class="dice-roll"><div class="dice-result"><div class="dice-total" style="color: #1e8b42; background: rgba(74, 222, 128, 0.1);">${actualHealed} Healing</div></div></div>`,
+              flags: {
+                  pf2e: {
+                      context: { type: "damage-taken" },
+                      appliedDamage: { isHealing: true, uuid: token.actor.uuid, updates: [{ path: "system.attributes.hp.value", value: newHP }] }
+                  }
+              }
             });
           } else {
             let damageToApply = Math.floor(aoeData.damageTotal * multiplier);
@@ -871,15 +865,19 @@ Hooks.on("renderChatMessage", (message, html, data) => {
         }
       }
 
-      // Fire Save Rules for this specific target
       await executeEffectRules([token], "save", dos, originItem, message.actor);
+    }
+    
+    // Commit the lockouts so you can't double-heal
+    if (Object.keys(msgUpdates).length > 0) {
+        await message.update(msgUpdates);
     }
 
     if (processedCount > 0) {
       if (needsDamageWarning) ui.notifications.warn("AoE Easy Resolve | Processed saves, but you forgot to click 'Roll Damage' first!");
       else ui.notifications.info(`AoE Easy Resolve | Processed damage and effects for ${processedCount} targets.`);
     } else {
-      ui.notifications.warn("AoE Easy Resolve | No targets have rolled saves yet.");
+      ui.notifications.warn("AoE Easy Resolve | All valid targets have already been processed.");
     }
 
     if (game.user.isGM && aoeData.templateId) {
@@ -908,16 +906,12 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
   });
   if (targetedTokens.length === 0) { 
     ui.notifications.info("AoE Easy Resolve | No tokens caught in the blast area."); 
-    // Auto-evaporate empty templates to keep the canvas clean
     setTimeout(async () => {
       try { await canvas.scene.deleteEmbeddedDocuments("MeasuredTemplate", [templateDoc.id]); } catch(e) {}
     }, 100);
     return; 
   }
 
-  // ==========================================
-  // NEW: GUARDIAN TAUNT INJECTION FOR AOE
-  // ==========================================
   let tauntNoticeHtml = "";
   const casterActor = cfg.originItem?.actor;
   if (casterActor) {
@@ -932,16 +926,12 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
               else if (t.actor?.alliance === 'party') targetedAllies = true;
           });
 
-          // Trap sprung: Allies hit, but the Guardian is safe
           if (targetedAllies && !targetedGuardian) {
-              
-              // 1. Lower the DC of the card
               if (cfg.saveDC) {
                   cfg.saveDC -= 1;
                   tauntNoticeHtml = `<div style="color: #d92c2c; background: rgba(217, 44, 44, 0.1); border: 1px solid #d92c2c; padding: 4px; text-align: center; font-weight: bold; margin-bottom: 6px;">Guardian Taunt Penalty:<br>DC Reduced by 1</div>`;
               }
 
-              // 2. Slap them with Off-Guard
               const alreadyOffGuard = casterActor.items.some(i => i.system?.slug === 'taunt-off-guard-penalty');
               if (!alreadyOffGuard) {
                   const offGuardEffect = {
@@ -969,7 +959,6 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
           }
       }
   }
-  // ==========================================
 
   const itemTraits = cfg.originItem?.system?.traits?.value || [];
   const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
@@ -989,7 +978,8 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
 
     targetsData[t.id] = { 
       id: t.id, name: t.name, img: t.document.texture.src, hasRolled: false, rollTotal: null, 
-      degreeOfSuccess: null, isHealing: effectType === "heal", isImmune: effectType === "none"
+      degreeOfSuccess: null, isHealing: effectType === "heal", isImmune: effectType === "none",
+      hasApplied: false
     };
   });
 
@@ -1001,7 +991,6 @@ async function generateTemplateCard(templateObj, templateDoc, cfg) {
     damageTotal: null, damageBreakdown: null, damageFormula: null, damageTooltip: null, isGM: game.user.isGM
   });
 
-  // Attach the penalty warning to the top of the card if the trap was triggered
   if (tauntNoticeHtml) {
       htmlContent = tauntNoticeHtml + htmlContent;
   }
