@@ -102,11 +102,19 @@
     <div class="form-group">
       <label>Trigger</label>
       <div class="form-fields">
-        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.context">
-          <option value="attack" {{#if rule.isAttack}}selected{{/if}}>Attack Roll</option>
-          <option value="save" {{#if rule.isSave}}selected{{/if}}>Saving Throw</option>
+       <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.context">
+    <option value="attack" {{#if rule.isAttack}}selected{{/if}}>Attack Roll</option>
+    <option value="save" {{#if rule.isSave}}selected{{/if}}>Save Result</option>
+    <option value="tokenEnter" {{#if rule.isTokenEnter}}selected{{/if}}>Token Enters Region</option>
+    <option value="tokenExit" {{#if rule.isTokenExit}}selected{{/if}}>Token Exits Region</option>
+    <option value="tokenMove" {{#if rule.isTokenMove}}selected{{/if}}>Moves Within Region</option>
+    <option value="turnStart" {{#if rule.isTurnStart}}selected{{/if}}>Start of Turn</option>
+    <option value="turnEnd" {{#if rule.isTurnEnd}}selected{{/if}}>End of Turn</option>
+          </optgroup>
+          
         </select>
         <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.outcome">
+          <option value="always" {{#if rule.isAlways}}selected{{/if}}>Always (Passive / Enter)</option>
           <option value="criticalSuccess" {{#if rule.isCS}}selected{{/if}}>Crit / Crit Success</option>
           <option value="success" {{#if rule.isS}}selected{{/if}}>Hit / Success</option>
           <option value="failure" {{#if rule.isF}}selected{{/if}}>Miss / Failure</option>
@@ -128,7 +136,11 @@
         <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.conditionUuid" value="{{rule.conditionUuid}}" placeholder="Compendium.pf2e...">
       </div>
     </div>
-
+<div class="form-group">
+    <label>Prompt Reactive Save?</label>
+    <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.promptSave" {{#if rule.promptSave}}checked{{/if}}>
+    <p class="notes">If checked, this rule will generate a new save card for the token instead of applying an effect.</p>
+</div>
     <div class="form-group">
       <label>Bonus Damage</label>
       <div class="form-fields">
