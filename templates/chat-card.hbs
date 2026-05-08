@@ -12,56 +12,54 @@
     {{/if}}
   </header>
 
-  <div class="targets-section" style="display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px;">
+  <div class="targets-section" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;">
     {{#each targets}}
-      <div class="target-row" data-token-id="{{id}}" style="display: flex; align-items: center; background: rgba(0, 0, 0, 0.2); padding: 5px; border-radius: 4px;">
-        <img src="{{img}}" width="30" height="30" style="border: none; margin-right: 10px;" />
-        <div class="target-name" style="flex: 1; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{name}}">{{name}}</div>
+      <div class="target-row" data-token-id="{{id}}" style="display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.2); padding: 6px; border-radius: 4px;">
         
-        <div class="target-save" style="flex: 0 0 105px; text-align: right;">
-          {{#if isHealing}}
-            <div data-token-id="{{id}}" style="font-weight: bold; color: #4ade80; text-shadow: 1px 1px 2px black; font-size: 1.1em; padding-top: 4px;" data-tooltip="Target receives healing automatically" data-tooltip-direction="UP">Healing</div>
-          {{else if isImmune}}
-            <div style="font-weight: bold; color: #9ca3af; font-size: 1.1em; padding-top: 4px;" data-tooltip="Target is immune to this effect" data-tooltip-direction="UP">Immune</div>
-          {{else if hasRolled}}
-            <div style="display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 5px;">
-              
-              <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                <div style="font-weight: bold; font-size: 1.1em;" data-tooltip="{{rollTooltip}}" data-tooltip-direction="UP">{{rollTotal}}</div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; flex: 1; overflow: hidden; padding-right: 8px;">
+            <img src="{{img}}" width="28" height="28" style="border: none; margin-right: 8px; border-radius: 4px;" />
+            <span class="target-name" style="font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{name}}">{{name}}</span>
+          </div>
+          
+          <div class="target-save" style="display: flex; align-items: center; gap: 8px;">
+            {{#if isHealing}}
+              <span style="font-weight: bold; color: #4ade80; text-shadow: 1px 1px 2px black;">Healing</span>
+            {{else if isImmune}}
+              <span style="font-weight: bold; color: #9ca3af;">Immune</span>
+            {{else if hasRolled}}
+              <span style="font-weight: bold; font-size: 1.1em;" data-tooltip="{{rollTooltip}}" data-tooltip-direction="UP">{{rollTotal}}</span>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                {{#if ../isGM}}
+                  <button class="step-dos-btn" data-token-id="{{id}}" data-direction="down" style="border: none; background: none; padding: 0; color: #888; font-size: 0.8em; cursor: pointer; height: auto;" data-tooltip="Decrease Result"><i class="fas fa-chevron-down"></i></button>
+                {{/if}}
                 
-                <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
-                  {{#if ../isGM}}
-                    <button class="step-dos-btn" data-token-id="{{id}}" data-direction="down" style="border: none; background: none; padding: 0; color: #888; font-size: 0.8em; cursor: pointer;" data-tooltip="Decrease Result" data-tooltip-direction="UP"><i class="fas fa-chevron-down"></i></button>
-                  {{/if}}
-                  
-                  <div style="font-size: 0.8em; color: {{dosColor}}; font-weight: bold;">
-                    {{dosLabel}}
-                  </div>
-
-                  {{#if ../isGM}}
-                    <button class="step-dos-btn" data-token-id="{{id}}" data-direction="up" style="border: none; background: none; padding: 0; color: #888; font-size: 0.8em; cursor: pointer;" data-tooltip="Increase Result" data-tooltip-direction="UP"><i class="fas fa-chevron-up"></i></button>
-                  {{/if}}
-                </div>
+                <span style="font-size: 0.9em; color: {{dosColor}}; font-weight: bold; white-space: nowrap;">{{dosLabel}}</span>
                 
-                {{#if showUnadjusted}}
-                  <div style="font-size: 0.7em; color: #888; text-decoration: line-through;" data-tooltip="Original unadjusted result" data-tooltip-direction="UP">
-                    {{unadjustedDosLabel}}
-                  </div>
+                {{#if ../isGM}}
+                  <button class="step-dos-btn" data-token-id="{{id}}" data-direction="up" style="border: none; background: none; padding: 0; color: #888; font-size: 0.8em; cursor: pointer; height: auto;" data-tooltip="Increase Result"><i class="fas fa-chevron-up"></i></button>
                 {{/if}}
               </div>
-
-              {{#unless hasUsedHeroPoint}}
-                <button class="hero-point-btn" data-token-id="{{id}}" style="padding: 2px 4px; line-height: 1; font-size: 0.9em; flex: 0 0 auto; background: rgba(255, 215, 0, 0.1); border: 1px solid #cca900; color: #cca900; border-radius: 3px;" data-tooltip="Spend a Hero Point to Reroll" data-tooltip-direction="UP">
-                  <i class="fas fa-hospital-symbol"></i>
-                </button>
-              {{/unless}}
-            </div>
-          {{else}}
-            <button class="roll-save-btn" data-token-id="{{id}}" style="padding: 2px 5px; font-size: 0.9em; width: 100%;">
-              <i class="fas fa-dice-d20"></i> Save
-            </button>
-          {{/if}}
+            {{else}}
+              <button class="roll-save-btn" data-token-id="{{id}}" style="padding: 2px 8px; font-size: 0.9em;">
+                <i class="fas fa-dice-d20"></i> Save
+              </button>
+            {{/if}}
+          </div>
         </div>
+
+        {{#if hasRolled}}
+        <div class="button-actions-row" style="display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 6px;">
+          {{#if showUnadjusted}}
+            <span style="font-size: 0.75em; color: #888; text-decoration: line-through; margin-right: auto;" data-tooltip="Original unadjusted result">{{unadjustedDosLabel}}</span>
+          {{/if}}
+          
+          <button type="button" class="hero-point-btn" data-token-id="{{id}}" title="Use Hero Point" style="flex: 0 0 26px; height: 24px; line-height: 24px; padding: 0; {{#if hasUsedHeroPoint}}color: #d4af37; border-color: #d4af37; background: rgba(212, 175, 55, 0.1);{{else}}color: #7a7971; background: rgba(0,0,0,0.1); border: 1px solid #7a7971;{{/if}}">
+            <i class="fas fa-star"></i>
+          </button>
+        </div>
+        {{/if}}
+
       </div>
     {{/each}}
   </div>
@@ -74,3 +72,4 @@
     <button class="apply-damage-btn" style="width: 100%; margin-top: 5px;"><i class="fas fa-heart-broken"></i> Apply Damage & Effects</button>
   </div>
 </div>
+

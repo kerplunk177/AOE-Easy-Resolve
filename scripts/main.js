@@ -457,7 +457,8 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
             [updateKey]: {
               hasRolled: true, rollTotal: data.rollTotal, rollFormula: data.rollFormula,
               rollTooltip: data.rollTooltip, degreeOfSuccess: data.dos, unadjustedDegreeOfSuccess: data.unadjustedDos,
-              hasUsedHeroPoint: data.hasUsedHeroPoint || false
+              hasUsedHeroPoint: data.hasUsedHeroPoint || false,
+              hasCover: data.hasCover || false
             } 
           });
 
@@ -809,7 +810,11 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     let originItem = null;
     if (aoeData.itemUuid) { try { originItem = await fromUuid(aoeData.itemUuid); } catch(e){} }
     const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
-    const extraRollOptions = (saveType === "reflex" && hasDamage) ? ["damaging-effect"] : [];
+    const extraRollOptions = [];
+if (saveType === "reflex") {
+    extraRollOptions.push("area-effect");
+    if (hasDamage) extraRollOptions.push("damaging-effect");
+}
 
     const npcsToRoll = [];
     for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
@@ -888,9 +893,12 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     if (aoeData.itemUuid) { try { originItem = await fromUuid(aoeData.itemUuid); } catch(e){} }
     const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
 
-    const rollOptions = { event: event, createMessage: false };
+    const rollOptions = { event: event, createMessage: false, extraRollOptions: [] };
     if (saveDC) rollOptions.dc = { value: saveDC };
-    if (saveType === "reflex" && hasDamage) rollOptions.extraRollOptions = ["damaging-effect"]; 
+    if (saveType === "reflex") {
+        rollOptions.extraRollOptions.push("area-effect");
+        if (hasDamage) rollOptions.extraRollOptions.push("damaging-effect");
+    }
     
     const rollResult = await token.actor.saves[saveType].roll(rollOptions);
     if (!rollResult) return;
@@ -913,7 +921,7 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     let unadjustedDos = rawDosValue !== undefined ? dosMap[rawDosValue] : dos;
   
     if (game.user.isGM) {
-      let updatePayload = { hasRolled: true, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, degreeOfSuccess: dos, unadjustedDegreeOfSuccess: unadjustedDos };
+      let updatePayload = { hasRolled: true, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, degreeOfSuccess: dos, unadjustedDegreeOfSuccess: unadjustedDos, hasUsedHeroPoint: true, hasCover: false };
       
       // PHASE ROUTER
       const saveContext = aoeData.isReactive ? "reactiveSave" : "save";
@@ -975,9 +983,11 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     if (saveDC) rollOptions.dc = { value: saveDC };
     
     let extraTraits = ["fortune"];
-    if (saveType === "reflex" && hasDamage) extraTraits.push("damaging-effect");
+    if (saveType === "reflex") {
+        extraTraits.push("area-effect");
+        if (hasDamage) extraTraits.push("damaging-effect");
+    }
     rollOptions.extraRollOptions = extraTraits;
-    
     const rollResult = await token.actor.saves[saveType].roll(rollOptions);
     if (!rollResult) return;
   
@@ -1025,11 +1035,82 @@ Hooks.on("renderChatMessage", (message, html, data) => {
     } else {
       await ChatMessage.create({
         whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
-        flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos, hasUsedHeroPoint: true } } }
+        flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos, hasUsedHeroPoint: true, hasCover: false } } }
       });
     }
   });
+// --- RETROACTIVE COVER INJECTION & HANDLER ---
+if (aoeData.saveType === "reflex") {
+  $html.find(".hero-point-btn").each((idx, el) => {
+      const tokenId = el.dataset.tokenId;
+      const targetData = aoeData.targets[tokenId];
+      if (targetData && targetData.hasRolled) {
+          const coverActive = targetData.hasCover ? "color: #fff; background: #3498db; border-color: #3498db;" : "color: #7a7971; background: rgba(0,0,0,0.1); border: 1px solid #7a7971;";
+          const coverHtml = `<button type="button" class="er-cover-btn" data-token-id="${tokenId}" title="Toggle Take Cover (+2)" style="flex: 0 0 30px; margin-left: 4px; ${coverActive}"><i class="fas fa-shield-alt"></i></button>`;
+          if ($(el).siblings('.er-cover-btn').length === 0) {
+              $(el).after(coverHtml);
+          }
+      }
+  });
+}
 
+$html.find(".er-cover-btn").off("click").on("click", async (event) => {
+event.preventDefault();
+const tokenId = event.currentTarget.dataset.tokenId;
+const token = canvas.tokens.get(tokenId);
+
+// Permission Lock: Only GM or Token Owner
+if (!game.user.isGM && (!token || !token.actor?.isOwner)) return;
+
+const freshMessage = game.messages.get(message.id);
+const aoeData = freshMessage.flags[MODULE_ID];
+const targetData = aoeData.targets[tokenId];
+
+if (!targetData || !targetData.hasRolled) return;
+
+const isApplyingCover = !targetData.hasCover;
+const modifier = isApplyingCover ? 2 : -2;
+const newTotal = targetData.rollTotal + modifier;
+
+// Extract original d20 from the tooltip to perfectly recalculate the Degree of Success
+const match = targetData.rollTooltip.match(/d20:\s*(\d+)/);
+const d20 = match ? parseInt(match[1], 10) : 10;
+
+const rawDosValue = getUnadjustedDos(newTotal, aoeData.saveDC, d20);
+const dosMap = { 0: "criticalFailure", 1: "failure", 2: "success", 3: "criticalSuccess" };
+const newDos = dosMap[rawDosValue] || "success";
+
+let newTooltip = targetData.rollTooltip;
+if (isApplyingCover) newTooltip += ", Take Cover (+2)";
+else newTooltip = newTooltip.replace(", Take Cover (+2)", "");
+
+if (game.user.isGM) {
+  await freshMessage.update({ 
+      [`flags.${MODULE_ID}.targets.${tokenId}.hasCover`]: isApplyingCover,
+      [`flags.${MODULE_ID}.targets.${tokenId}.rollTotal`]: newTotal,
+      [`flags.${MODULE_ID}.targets.${tokenId}.degreeOfSuccess`]: newDos,
+      [`flags.${MODULE_ID}.targets.${tokenId}.unadjustedDegreeOfSuccess`]: newDos,
+      [`flags.${MODULE_ID}.targets.${tokenId}.rollTooltip`]: newTooltip
+  });
+
+  const updatedMessage = game.messages.get(message.id);
+  const updatedAoeData = updatedMessage.flags[MODULE_ID];
+  const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+  const formattedSaveType = updatedAoeData.saveType.charAt(0).toUpperCase() + updatedAoeData.saveType.slice(1);
+  
+  const newHtmlContent = await renderHBS(templatePath, { 
+    targets: formatTargetsData(updatedAoeData.targets), itemName: updatedAoeData.itemName,
+    saveType: formattedSaveType, saveDC: updatedAoeData.saveDC, damageTotal: updatedAoeData.damageTotal,
+    damageBreakdown: updatedAoeData.damageBreakdown, damageFormula: updatedAoeData.damageFormula, damageTooltip: updatedAoeData.damageTooltip, isGM: game.user.isGM
+  });
+  await updatedMessage.update({ content: newHtmlContent });
+} else {
+  await ChatMessage.create({
+    whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
+    flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: newTotal, rollFormula: targetData.rollFormula, rollTooltip: newTooltip, dos: newDos, unadjustedDos: newDos, hasUsedHeroPoint: targetData.hasUsedHeroPoint, hasCover: isApplyingCover } } }
+  });
+}
+});
   $html.find(".step-dos-btn").off("click").on("click", async (event) => {
     event.preventDefault();
     if (!game.user.isGM) return; 
