@@ -88,6 +88,40 @@
   <div class="form-group"><label>Success</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.success" value="{{multipliers.success}}" placeholder="0.5"></div></div>
   <div class="form-group"><label>Failure</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.failure" value="{{multipliers.failure}}" placeholder="1"></div></div>
   <div class="form-group"><label>Crit Failure</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalFailure" value="{{multipliers.criticalFailure}}" placeholder="2"></div></div>
+
+  <hr style="margin: 5px 0;">
+  <p class="notes"><strong>Target Matrix & Hazard Settings</strong></p>
+  <div class="form-group">
+    <label>Enemy Base Effect</label>
+    <div class="form-fields">
+      <select name="flags.aoe-easy-resolve.enemyBaseEffect">
+        <option value="standard" {{#if enemyBaseStandard}}selected{{/if}}>Standard (Take Damage)</option>
+        <option value="heal" {{#if enemyBaseHeal}}selected{{/if}}>Healing (Restore HP)</option>
+        <option value="immune" {{#if enemyBaseImmune}}selected{{/if}}>Immune (Ignore Roll)</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Ally Base Effect</label>
+    <div class="form-fields">
+      <select name="flags.aoe-easy-resolve.allyBaseEffect">
+        <option value="standard" {{#if allyBaseStandard}}selected{{/if}}>Standard (Take Damage)</option>
+        <option value="heal" {{#if allyBaseHeal}}selected{{/if}}>Healing (Restore HP)</option>
+        <option value="immune" {{#if allyBaseImmune}}selected{{/if}}>Immune (Ignore Roll)</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Hazard Duration (Rounds)</label>
+    <div class="form-fields">
+      <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="Leave blank for infinite">
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Enable Tactical Drawing Tools?</label>
+    <input type="checkbox" name="flags.aoe-easy-resolve.tacticalDrawing" {{checked tacticalDrawing}}>
+    <p class="notes">Adds Freehand and Rectangle drawing tools to the chat card for custom hazard shapes.</p>
+  </div>
 </fieldset>
 
 
@@ -103,15 +137,14 @@
       <label>Trigger</label>
       <div class="form-fields">
        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.context">
-    <option value="attack" {{#if rule.isAttack}}selected{{/if}}>Attack Roll</option>
-    <option value="save" {{#if rule.isSave}}selected{{/if}}>Save Result</option>
-    <option value="tokenEnter" {{#if rule.isTokenEnter}}selected{{/if}}>Token Enters Region</option>
-    <option value="tokenExit" {{#if rule.isTokenExit}}selected{{/if}}>Token Exits Region</option>
-    <option value="tokenMove" {{#if rule.isTokenMove}}selected{{/if}}>Moves Within Region</option>
-    <option value="turnStart" {{#if rule.isTurnStart}}selected{{/if}}>Start of Turn</option>
-    <option value="turnEnd" {{#if rule.isTurnEnd}}selected{{/if}}>End of Turn</option>
-          </optgroup>
-          
+        <option value="attack" {{#if rule.isAttack}}selected{{/if}}>Attack Roll</option>
+        <option value="save" {{#if rule.isSave}}selected{{/if}}>Save Result</option>
+        <option value="reactiveSave" {{#if rule.isReactiveSave}}selected{{/if}}>Reactive Save (Hazard)</option>
+        <option value="tokenEnter" {{#if rule.isTokenEnter}}selected{{/if}}>Token Enters Region</option>
+        <option value="tokenExit" {{#if rule.isTokenExit}}selected{{/if}}>Token Exits Region</option>
+        <option value="tokenMove" {{#if rule.isTokenMove}}selected{{/if}}>Moves Within Region</option>
+        <option value="turnStart" {{#if rule.isTurnStart}}selected{{/if}}>Start of Turn</option>
+        <option value="turnEnd" {{#if rule.isTurnEnd}}selected{{/if}}>End of Turn</option>
         </select>
         <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.outcome">
           <option value="always" {{#if rule.isAlways}}selected{{/if}}>Always (Passive / Enter)</option>
@@ -119,6 +152,17 @@
           <option value="success" {{#if rule.isS}}selected{{/if}}>Hit / Success</option>
           <option value="failure" {{#if rule.isF}}selected{{/if}}>Miss / Failure</option>
           <option value="criticalFailure" {{#if rule.isCF}}selected{{/if}}>Crit Miss / Crit Fail</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Target Scope</label>
+      <div class="form-fields">
+        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.alliance">
+          <option value="all" {{#if rule.isAllianceAll}}selected{{/if}}>Affects Everyone</option>
+          <option value="enemy" {{#if rule.isAllianceEnemy}}selected{{/if}}>Enemies Only</option>
+          <option value="ally" {{#if rule.isAllianceAlly}}selected{{/if}}>Allies Only</option>
         </select>
       </div>
     </div>
@@ -136,11 +180,11 @@
         <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.conditionUuid" value="{{rule.conditionUuid}}" placeholder="Compendium.pf2e...">
       </div>
     </div>
-<div class="form-group">
-    <label>Prompt Reactive Save?</label>
-    <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.promptSave" {{#if rule.promptSave}}checked{{/if}}>
-    <p class="notes">If checked, this rule will generate a new save card for the token instead of applying an effect.</p>
-</div>
+    <div class="form-group">
+        <label>Prompt Reactive Save?</label>
+        <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.promptSave" {{#if rule.promptSave}}checked{{/if}}>
+        <p class="notes">If checked, this rule will generate a new save card for the token instead of applying an effect.</p>
+    </div>
     <div class="form-group">
       <label>Bonus Damage</label>
       <div class="form-fields">
