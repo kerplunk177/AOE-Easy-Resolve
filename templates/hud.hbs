@@ -1,0 +1,38 @@
+<div class="holodeck-container">
+    <div class="header-control">
+        <button class="{{#if isSimActive}}active-sim{{/if}}" data-action="toggleSim">
+            {{#if isSimActive}}Deactivate Protocol{{else}}Initialize Simulation{{/if}}
+        </button>
+    </div>
+
+    <hr>
+
+    <div class="state-controls flexcol">
+        <div class="flexrow">
+            <input type="text" id="new-state-name" placeholder="Name new save state..." />
+            <button data-action="createState"><i class="fas fa-plus"></i></button>
+        </div>
+
+        <div class="flexrow">
+            <select id="state-selector">
+                {{#each states as |state name|}}
+                    <option value="{{name}}">{{name}}</option>
+                {{/each}}
+            </select>
+        </div>
+
+        <div class="flexrow execution-row">
+            <button data-action="saveState" title="Overwrite Selected"><i class="fas fa-save"></i> Save</button>
+            <button data-action="loadState" title="Load Selected"><i class="fas fa-upload"></i> Load</button>
+            <button data-action="deleteState" title="Delete Selected"><i class="fas fa-trash"></i></button>
+        </div>
+    </div>
+
+    <hr>
+
+    <div class="footer-control">
+        <button data-action="commitChanges" title="Push NPC tweaks to the sidebar">
+            <i class="fas fa-code-branch"></i> Commit NPC Changes
+        </button>
+    </div>
+</div>

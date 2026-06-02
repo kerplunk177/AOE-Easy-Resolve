@@ -1,0 +1,836 @@
+<div class="forensics-container">
+    
+    <div class="forensics-header">
+        <div class="forensics-header-top">
+            <h2 class="forensics-title"><i class="fas fa-microscope"></i> Combat Forensics</h2>
+            
+            <div class="forensics-controls">
+                <select id="analytics-selector" class="forensics-selector">
+                    <option value="current" {{#if (eq selectedEncounter 'current')}}selected{{/if}}>Current / Live Combat</option>
+                    <option value="exploration" style="color: #44ff44;" {{#if (eq selectedEncounter 'exploration')}}selected{{/if}}>Live Exploration</option>
+                    
+                    <optgroup label="Campaign Aggregators">
+                        <option value="meta" style="font-weight: bold; color: #ffaa00;" {{#if (eq selectedEncounter 'meta')}}selected{{/if}}>Campaign Combat Meta-Metrics</option>
+                        <option value="meta-explore" style="font-weight: bold; color: #44ff44;" {{#if (eq selectedEncounter 'meta-explore')}}selected{{/if}}>Campaign Exploration Meta-Metrics</option>
+                        {{#if isGM}}
+                        <option value="meta-sim" style="font-weight: bold; color: #ff4444;" {{#if (eq selectedEncounter 'meta-sim')}}selected{{/if}}>Simulation Meta-Metrics</option>
+                        {{/if}}
+                    </optgroup>
+
+                    <optgroup label="Combat Encounters">
+                    {{#each historyKeys}}<option value="{{this}}" {{#if (eq ../selectedEncounter this)}}selected{{/if}}>{{this}}</option>{{/each}}
+                    </optgroup>
+
+                    <optgroup label="Exploration Sessions">
+                    {{#each exploreKeys}}<option value="{{this}}" {{#if (eq ../selectedEncounter this)}}selected{{/if}}>{{this}}</option>{{/each}}
+                    </optgroup>
+
+                    {{#if isGM}}
+                    <optgroup label="Holodeck Simulations">
+                    {{#each simKeys}}<option value="{{this}}" {{#if (eq ../selectedEncounter this)}}selected{{/if}}>{{this}}</option>{{/each}}
+                    </optgroup>
+                    {{/if}}
+               </select>
+
+         {{#if isGM}}
+                <button type="button" class="forensics-btn" data-action="createManualLog" data-tooltip="Add Manual Log" style="background: #333311; border-color: #ffff44; color: #ffff44;"><i class="fas fa-plus-circle"></i></button>
+                <button type="button" class="forensics-btn" data-action="deleteEncounter" data-tooltip="Delete Selected Encounter" style="background: #441111; border-color: #ff4444; color: #ff6666;"><i class="fas fa-calendar-times"></i></button>
+                <button type="button" class="forensics-btn" data-action="exportData" data-tooltip="Export to Journal" style="background: #113311; border-color: #44ff44; color: #44ff44;"><i class="fas fa-book"></i></button>
+                <button type="button" class="forensics-btn" data-action="downloadJSON" data-tooltip="Download Raw JSON" style="background: #113355; border-color: #44aaff; color: #44aaff;"><i class="fas fa-file-code"></i></button>
+                <button type="button" class="forensics-btn" data-action="importData" data-tooltip="Import Archives" style="background: #331133; border-color: #aa44ff; color: #aa44ff;"><i class="fas fa-file-import"></i></button>
+                <button type="button" class="forensics-btn" data-action="clearHistory" data-tooltip="Purge Archives" style="background: #441111; border-color: #ff4444; color: #ffaa00;"><i class="fas fa-trash"></i></button>
+                {{/if}}
+            </div>
+        </div>
+        
+        <div class="forensics-stats">
+            {{#if isGM}}
+                Expected Difficulty: <span style="color: {{stats.diffColor}}; font-weight: bold;">{{stats.difficultyStr}}</span> | 
+            {{/if}}
+            Active Combatants: <span style="color: #44aaff; font-weight: bold;">{{stats.partyCount}} Party</span> {{#if isGM}}vs <span style="color: #ff4444; font-weight: bold;">{{stats.enemyCount}} Enemy</span>{{/if}} | 
+            Total Actions: <span style="color: #fff;">{{stats.partyActions}}{{#if isGM}} vs {{stats.enemyActions}}{{/if}}</span> |
+            Active Time: <span style="color: #ffaa00; font-weight: bold;">{{stats.totalEncounterTimeStr}}</span>
+        </div>
+    </div>
+
+    <div class="forensics-nav">
+        <button type="button" class="forensics-nav-btn {{#if (eq viewMode 'overview')}}active{{else}}inactive{{/if}}" data-action="setViewMode" data-mode="overview">
+            <i class="fas fa-chart-pie"></i> Overview
+        </button>
+        <button type="button" class="forensics-nav-btn {{#if (eq viewMode 'time')}}active{{else}}inactive{{/if}}" data-action="setViewMode" data-mode="time">
+            <i class="fas fa-stream"></i> Timeline
+        </button>
+        <button type="button" class="forensics-nav-btn {{#if (eq viewMode 'actor')}}active{{else}}inactive{{/if}}" data-action="setViewMode" data-mode="actor">
+            <i class="fas fa-users"></i> Combatants
+        </button>
+    </div>
+
+    <div class="forensics-content-area">
+        {{#if hasData}}
+            
+            {{#if (eq viewMode 'overview')}}
+                {{#unless isMeta}}
+                <div class="forensics-graph-container">
+                    <svg viewBox="0 0 750 150" style="width: 100%; height: 100%;">
+                        <line x1="30" y1="20" x2="730" y2="20" stroke="#333" stroke-width="1" stroke-dasharray="4" />
+                        <line x1="30" y1="75" x2="730" y2="75" stroke="#333" stroke-width="1" stroke-dasharray="4" />
+                        <line x1="30" y1="130" x2="730" y2="130" stroke="#555" stroke-width="1" />
+                        
+                        <text x="25" y="24" fill="#888" font-size="11" text-anchor="end" font-family="sans-serif">{{graph.maxDamage}}</text>
+                        <text x="25" y="79" fill="#888" font-size="11" text-anchor="end" font-family="sans-serif">{{graph.halfDamage}}</text>
+                        <text x="25" y="134" fill="#888" font-size="11" text-anchor="end" font-family="sans-serif">0</text>
+
+                        <polyline points="{{graph.partyPoints}}" fill="none" stroke="#44aaff" stroke-width="3" stroke-linejoin="round" />
+                        {{#each graph.pDots}}<circle cx="{{x}}" cy="{{y}}" r="4" fill="#44aaff" />{{/each}}
+
+                        {{#if isGM}}
+                            <polyline points="{{graph.enemyPoints}}" fill="none" stroke="#ff4444" stroke-width="3" stroke-linejoin="round" />
+                            {{#each graph.eDots}}<circle cx="{{x}}" cy="{{y}}" r="4" fill="#ff4444" />{{/each}}
+                        {{/if}}
+
+                        {{#each graph.xLabels}}
+                        <text x="{{x}}" y="146" fill="#aaa" font-size="11" text-anchor="middle" font-family="sans-serif" font-weight="bold">R{{round}}</text>
+                        {{/each}}
+                    </svg>
+                    <div class="forensics-graph-legend">
+                        <span style="color: #44aaff; font-weight: bold; margin-right: 3px;">■</span> Party DMG
+                        {{#if isGM}} &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color: #ff4444; font-weight: bold; margin-right: 3px;">■</span> Enemy DMG {{/if}}
+                    </div>
+                </div>
+                {{/unless}}
+
+                <div class="pitboss-main-wrapper">
+                    <div class="pitboss-panel">
+                        <div class="pitboss-header">
+                            <i class="fas fa-eye"></i> Pit Boss Insights (Classified)
+                        </div>
+                        <div class="pitboss-grid">
+                            <div class="pitboss-row main-metrics">
+                                {{!-- Fate & Probability Card --}}
+                                <div class="pitboss-card insight-card fate">
+                                    <div class="pitboss-card-title"><i class="fas fa-dice"></i> Fate & Probability</div>
+                                    <div class="pitboss-stat-content">
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Luckiest:</span> 
+                                            <span class="stat-value luckiest">{{pitBoss.luckiestName}} <span class="sub-val">({{pitBoss.luckiestAvg}})</span></span>
+                                        </div>
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Unluckiest:</span> 
+                                            <span class="stat-value unluckiest">{{pitBoss.unluckiestName}} <span class="sub-val">({{pitBoss.unluckiestAvg}})</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{!-- Damage Variance Card --}}
+                                <div class="pitboss-card insight-card variance">
+                                    <div class="pitboss-card-title"><i class="fas fa-chart-line"></i> Damage Variance</div>
+                                    <div class="pitboss-stat-content">
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Party vs Mean:</span> 
+                                            <span class="stat-value skew" style="color: {{pitBoss.partySkewColor}};">{{pitBoss.partySkewStr}}</span>
+                                        </div>
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Enemy vs Mean:</span> 
+                                            <span class="stat-value skew" style="color: {{pitBoss.enemySkewColor}};">{{pitBoss.enemySkewStr}}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="pitboss-card insight-card efficiency">
+                                    <div class="pitboss-card-title"><i class="fas fa-hourglass-half"></i> Time Efficiency</div>
+                                    <div class="pitboss-stat-content">
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Party Pace:</span> 
+                                            <span class="stat-value pace-party">{{pitBoss.partyPaceStr}}</span>
+                                        </div>
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Enemy Pace:</span> 
+                                            <span class="stat-value pace-enemy">{{pitBoss.enemyPaceStr}}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+
+                                {{#if (or pitBoss.synergy.guardianTaunts pitBoss.synergy.hunterShots pitBoss.synergy.surges pitBoss.synergy.wallMitigated pitBoss.synergy.dodgeKing.total pitBoss.synergy.saveKing.total)}}
+                                <div class="pitboss-card insight-card synergy" style="border-color: #aa44ff !important;">
+                                    <div class="pitboss-card-title"><i class="fas fa-handshake"></i> Utility and Defence</div>
+                                    <div class="pitboss-stat-content" style="max-height: 125px; overflow-y: auto; padding-right: 4px;">
+                                    
+                                        
+                                        {{#if pitBoss.synergy.guardianTaunts}}
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Top Guardian:</span> 
+                                            <span class="stat-value" style="color: #44aaff;">{{pitBoss.synergy.guardianName}} 
+                                                <span class="sub-val">({{pitBoss.synergy.guardianTaunts}} Taunts)</span>
+                                            </span>
+                                        </div>
+                                        {{/if}}
+
+                                        {{#if pitBoss.synergy.wallMitigated}}
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Iron Wall:</span> 
+                                            <span class="stat-value" style="color: #44ff44;">{{pitBoss.synergy.wallName}} 
+                                                <span class="sub-val">({{pitBoss.synergy.wallMitigated}} BLKD)</span>
+                                            </span>
+                                        </div>
+                                        {{/if}}
+                                        {{#if pitBoss.synergy.meatShield.name}}
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 0.85rem;">
+            <span style="color: #ccc; font-weight: bold; text-transform: uppercase;">Always in the Way:</span>
+            <div style="text-align: right;">
+                <span style="color: #ffcc00; font-weight: bold;">{{pitBoss.synergy.meatShield.name}}</span>
+                <span style="color: #aaa; margin-left: 4px;">({{pitBoss.synergy.meatShield.coverProvided}} Interrupts)</span>
+            </div>
+        </div>
+        {{/if}}
+                                        {{#if pitBoss.synergy.dodgeKing.total}}
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Hardest to Hit:</span> 
+                                            <span class="stat-value" style="color: #44ffaa;">{{pitBoss.synergy.dodgeKing.name}} 
+                                                <span class="sub-val">({{pitBoss.synergy.dodgeKing.pct}}% Dodge)</span>
+                                            </span>
+                                        </div>
+                                        {{/if}}
+
+                                        {{#if pitBoss.synergy.saveKing.total}}
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Most Evasive:</span> 
+                                            <span class="stat-value" style="color: #aa44ff;">{{pitBoss.synergy.saveKing.name}} 
+                                                <span class="sub-val">({{pitBoss.synergy.saveKing.pct}}% Resist)</span>
+                                            </span>
+                                        </div>
+                                        {{/if}}
+
+                                        {{#if pitBoss.synergy.hunterShots}}
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Apex Hunter:</span> 
+                                            <span class="stat-value" style="color: #ffaa00;">{{pitBoss.synergy.hunterName}} 
+                                                <span class="sub-val">({{pitBoss.synergy.hunterDmg}} Fused DMG)</span>
+                                            </span>
+                                        </div>
+                                        {{/if}}
+
+                                        {{#if pitBoss.synergy.surges}}
+                                        <div class="pitboss-stat-row">
+                                            <span class="stat-label">Wellspring:</span> 
+                                            <span class="stat-value" style="color: #aa44ff;">{{pitBoss.synergy.surgerName}} 
+                                                <span class="sub-val">({{pitBoss.synergy.surges}} Surges)</span>
+                                            </span>
+                                        </div>
+                                        {{/if}}
+
+                                    </div>
+                                </div>
+                                {{/if}}
+                            </div>
+
+                            <div class="pitboss-row charts-row">
+                                {{!-- Enemy Elements --}}
+                                <div class="pitboss-card chart-card">
+                                    <div class="pitboss-card-title">Enemy Elements</div>
+                                    <div class="chart-container">
+                                        {{#if pitBoss.pieSlices.length}}
+                                            <svg viewBox="0 0 100 100" class="pitboss-pie" style="overflow: visible !important;">
+                                                {{#each pitBoss.pieSlices}}
+                                                    <path d="{{path}}" fill="{{color}}" stroke="#111" stroke-width="0.5" data-tooltip="{{tooltip}}"></path>
+                                                {{/each}}
+                                            </svg>
+                                            <div class="chart-legend">
+                                                {{#each pitBoss.legendItems}}
+                                                    <span data-tooltip="{{tooltip}}"><i class="fas fa-square" style="color: {{color}};"></i> {{name}}</span>
+                                                {{/each}}
+                                            </div>
+                                        {{else}}
+                                            <div class="no-data-msg">No elemental data logged</div>
+                                        {{/if}}
+                                    </div>
+                                </div>
+
+                                {{!-- Active Time Distribution --}}
+                                <div class="pitboss-card chart-card">
+                                    <div class="pitboss-card-title">Active Time Distribution</div>
+                                    <div class="chart-container">
+                                        {{#if pitBoss.timePieSlices.length}}
+                                            <svg viewBox="0 0 100 100" class="pitboss-pie" style="overflow: visible !important;">
+                                                {{#each pitBoss.timePieSlices}}
+                                                    <path d="{{path}}" fill="{{color}}" stroke="#111" stroke-width="0.5" data-tooltip="{{tooltip}}"></path>
+                                                {{/each}}
+                                            </svg>
+                                            <div class="chart-legend">
+                                                {{#each pitBoss.timeLegendItems}}
+                                                    <span data-tooltip="{{tooltip}}"><i class="fas fa-square" style="color: {{color}};"></i> {{name}} ({{formattedTime}})</span>
+                                                {{/each}}
+                                            </div>
+                                        {{else}}
+                                            <div class="no-data-msg">No turn data logged</div>
+                                        {{/if}}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {{/if}}
+
+            {{#if (or (eq viewMode 'overview') (eq viewMode 'actor'))}}
+                {{#if pcs.length}}
+                <div class="actor-faction-header actor-faction-party">
+                    <i class="fas fa-users" style="color: #44aaff; margin-right: 5px;"></i> Party & Allies
+                </div>
+                {{#each pcs}}
+                <details class="forensics-actor-overview" data-actor="{{name}}" {{#if (lookup ../expandedActors name)}}open{{/if}}>
+                    <summary style="padding: 10px; outline: none; cursor: pointer;">
+                        <div class="actor-summary-header">
+                            <span class="actor-name-row"><i class="fas fa-caret-right disclosure-arrow"></i>{{name}}</span>
+                            <span class="actor-metrics-row">
+                                {{#if ../canAudit}}
+                                <a data-action="swapAllegiance" data-actor="{{name}}" style="margin-right: 15px; color: #aaa; cursor: pointer; font-size: 0.9em;"><i class="fas fa-exchange-alt"></i></a>
+                                {{/if}}
+                               {{#if ../isExploration}}
+                                    <span style="color: #fff;">{{totalChecks}} Checks</span> 
+                                {{else}}
+                                    <span style="color: #aaa; font-size: 0.85em; margin-right: 12px; font-weight: normal;" title="Average Turn Length / Max Turn Length"><i class="far fa-clock"></i> {{avgTurnTimeStr}} <span style="color: #666;">/</span> {{maxTurnTimeStr}}</span>
+                                    <span style="color: #fff;">{{damageDealt}} DMG</span> <span style="color: #888; font-size: 0.8em;">({{dpr}} DPR)</span>
+                                    <span style="color: #ffaa00; margin-left: 5px; font-size: 0.9em;">[{{kills}}K / {{assists}}A]</span>
+                                    {{#if healingDealt}}<span style="color: #44ff44; margin-left: 5px;">| {{healingDealt}} HEAL</span>{{/if}}
+                                {{/if}}
+                            </span>
+                        </div>
+
+                        <div class="actor-health-bar-container large-bar">
+                            {{#if ../isExploration}}
+                                <div style="width: {{successRate}}%; background: linear-gradient(90deg, var(--forensics-explore-grad) 0%, var(--forensics-explore-main) 100%); height: 100%;">
+                                    <span class="bar-label">{{successRate}}%</span>
+                                </div>
+                            {{else}}
+                                <div style="width: {{damagePercent}}%; background: linear-gradient(90deg, var(--forensics-party-grad) 0%, var(--forensics-party-main) 100%); height: 100%;">
+                                    <span class="bar-label">{{damagePercent}}%</span>
+                                </div>
+                            {{/if}}
+                        </div>
+                    </summary>
+                    
+                    <div style="background: rgba(15, 15, 20, 0.95); padding: 10px; border-top: 1px solid #444;">
+                        
+                        {{!-- TOP STAT ROW W/ SYNERGY INJECTION --}}
+                        <div style="display: flex; flex-wrap: wrap; justify-content: space-around; gap: 10px; text-align: center; margin-bottom: 15px; border-bottom: 1px dashed #333; padding-bottom: 15px;">
+                            <div>
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Average d20</div>
+                                <div style="color: #ffcc00; font-weight: bold; font-size: 1.2em;">{{avgD20Display}}</div>
+                            </div>
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Best Action</div>
+                                <div style="color: #44aaff; font-weight: bold; font-size: 1.2em;">{{maxDamageDealt}} DMG</div>
+                            </div>
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Hardest Hit Taken</div>
+                                <div style="color: #ff6666; font-weight: bold; font-size: 1.2em;">{{maxDamageTaken}} DMG</div>
+                            </div>
+                            {{#if maxHealDealt}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Biggest Heal</div>
+                                <div style="color: #44ff44; font-weight: bold; font-size: 1.2em;">{{maxHealDealt}} HP</div>
+                            </div>
+                            {{/if}}
+                            {{#if mitigated}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Total Blocked</div>
+                                <div style="color: #44aaff; font-weight: bold; font-size: 1.2em;">{{mitigated}} BLKD</div>
+                            </div>
+                            {{/if}}
+                            
+                            <div style="border-left: 1px solid #333; padding-left: 15px;" data-tooltip="{{dodgeTooltip}}">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Dodge Chance</div>
+                                <div style="color: #44ffaa; font-weight: bold; font-size: 1.2em;">{{dodgeChance}}%</div>
+                            </div>
+                            <div style="border-left: 1px solid #333; padding-left: 15px;" data-tooltip="{{saveTooltip}}">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Resist Chance</div>
+                                <div style="color: #aa44ff; font-weight: bold; font-size: 1.2em;">{{saveChance}}%</div>
+                            </div>
+<div class="metric-group">
+    <div class="metric-label">Shots Interrupted</div>
+    <div class="metric-value">
+        <span style="color: #ff6666;" title="Enemy shots you blocked">{{advanced.interruptedEnemy}}</span> 
+        <span style="color: #888;">/</span> 
+        <span style="color: #44aaff;" title="Friendly shots you blocked">{{advanced.interruptedFriendly}}</span>
+    </div>
+</div>
+
+                            {{#if mitigated}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Total Blocked</div>
+                                <div style="color: #44aaff; font-weight: bold; font-size: 1.2em;">{{mitigated}} BLKD</div>
+                            </div>
+                            {{/if}}
+                            {{!-- Inline Synergy Stats --}}
+                            {{#if advanced.huntedShots}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">{{#if advanced.isTopHunter}}<i class="fas fa-crown" style="color:#ffaa00;"></i> Apex Hunter{{else}}Hunted Shots{{/if}}</div>
+                                <div style="color: #ffaa00; font-weight: bold; font-size: 1.2em;">{{advanced.huntedShots}} <span style="font-size: 0.6em; color: #aaa;">({{advanced.huntedShotDmg}} DMG)</span></div>
+                            </div>
+                            {{/if}}
+                            {{#if advanced.taunts}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">{{#if advanced.isTopGuardian}}<i class="fas fa-shield-alt" style="color:#44aaff;"></i> Top Guardian{{else}}Taunts{{/if}}</div>
+                                <div style="color: #44aaff; font-weight: bold; font-size: 1.2em;">{{advanced.taunts}} <span style="font-size: 0.6em; color: #aaa;">({{advanced.tauntTriggers}} TRIG)</span></div>
+                            </div>
+                            {{/if}}
+                            {{#if advanced.surges}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">{{#if advanced.isTopSurger}}<i class="fas fa-magic" style="color:#aa44ff;"></i> Wellspring{{else}}Surges{{/if}}</div>
+                                <div style="color: #aa44ff; font-weight: bold; font-size: 1.2em;">{{advanced.surges}} <span style="font-size: 0.6em; color: #aaa;">({{advanced.surgeFriendlyDmg}} FF)</span></div>
+                            </div>
+                            {{/if}}
+                        </div>
+
+                        <div style="display: flex; height: 40px; align-items: flex-end; gap: 2px; border-bottom: 1px solid #555; padding-bottom: 2px;">
+                            {{#each d20Graph}}
+                            <div style="flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative;" title="Rolled {{value}}: {{count}} times">
+                                <span style="font-size: 0.7em; color: #ccc; position: absolute; top: -14px;">{{#if count}}{{count}}{{/if}}</span>
+                                <div style="width: 100%; background: {{color}}; height: {{#if height}}{{height}}{{else}}1{{/if}}%; border-radius: 2px 2px 0 0; min-height: 2px;"></div>
+                            </div>
+                            {{/each}}
+                        </div>
+                        <div style="display: flex; gap: 2px; font-size: 0.7em; color: #888; padding-top: 4px; text-align: center; font-weight: bold; margin-bottom: 20px;">
+                            {{#each d20Graph}}<div style="flex: 1;">{{value}}</div>{{/each}}
+                        </div>
+
+                        {{#if abilityBreakdown.length}}
+                        <div style="text-align: center; color: #ffaa00; font-weight: bold; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px;">
+                            Ability Output Profile
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            {{#each abilityBreakdown}}
+                            {{#if (or damage healing)}}
+                            <div style="background: rgba(0,0,0,0.4); border: 1px solid #333; padding: 6px 10px; border-radius: 3px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <span style="font-weight: bold; color: #eee; font-size: 0.95em;">{{name}}</span>
+                                    <span style="font-weight: bold; font-size: 0.95em;">
+                                        {{#if damage}}<span style="color: #ff6666;">{{damage}} DMG</span> <span style="color: #888; font-weight: normal; font-size: 0.8em;">({{dmgPct}}%)</span>{{/if}}
+                                        {{#if hasBoth}} <span style="color: #666;">|</span> {{/if}}
+                                        {{#if healing}}<span style="color: #44ff44;">{{healing}} HEAL</span>{{/if}}
+                                    </span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: #888;">
+                                    <span>Uses: <span style="color: #ccc; font-weight: bold;">{{casts}}</span></span>
+                                    <span>Damage Instances: <span style="color: #ccc; font-weight: bold;">{{damageInstances}}</span></span>
+                                </div>
+                            </div>
+                            {{/if}}
+                            {{/each}}
+                        </div>
+                        {{/if}}
+
+                        {{!-- MINION NESTING (MOVED) --}}
+                        {{#if minions.length}}
+                        <div style="margin-top: 15px; border-top: 2px dashed #444; padding-top: 10px;">
+                            <div style="font-size: 0.85em; color: #ffaa00; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; text-align: center;"><i class="fas fa-paw"></i> Minions & Summons</div>
+                            {{#each minions}}
+                            <details style="background: rgba(0,0,0,0.6); border: 1px solid #333; border-radius: 4px; margin-bottom: 8px;">
+                                <summary style="padding: 10px; outline: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; border-bottom: 1px solid transparent;">
+                                    <span style="color: #eee; font-weight: bold;"><i class="fas fa-caret-right disclosure-arrow" style="margin-right: 5px;"></i>{{name}}</span>
+                                    <span style="color: #aaa;">
+                                        <span style="color: #ff6666; margin-right: 8px;">{{damageDealt}} DMG</span>
+                                        <span style="color: #44ff44; margin-right: 8px;">{{healingDealt}} HEAL</span>
+                                        <span style="color: #44aaff;">{{mitigated}} BLKD</span>
+                                    </span>
+                                </summary>
+                                <div style="padding: 10px; border-top: 1px solid #333; display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-around; text-align: center; background: rgba(20, 20, 25, 0.95);">
+                                    <div>
+                                        <div style="font-size: 0.7em; color: #888; text-transform: uppercase;">Dodge</div>
+                                        <div style="color: #44ffaa; font-weight: bold; font-size: 1.1em;">{{dodgeChance}}%</div>
+                                    </div>
+                                    <div style="border-left: 1px solid #444; padding-left: 15px;">
+                                        <div style="font-size: 0.7em; color: #888; text-transform: uppercase;">Saves</div>
+                                        <div style="color: #aa44ff; font-weight: bold; font-size: 1.1em;">{{saveChance}}%</div>
+                                    </div>
+                                    <div style="border-left: 1px solid #444; padding-left: 15px;">
+                                        <div style="font-size: 0.7em; color: #888; text-transform: uppercase;">Best Hit</div>
+                                        <div style="color: #44aaff; font-weight: bold; font-size: 1.1em;">{{maxDamageDealt}}</div>
+                                    </div>
+                                </div>
+                            </details>
+                            {{/each}}
+                        </div>
+                        {{/if}}
+
+                        {{!-- CASCADING THREAT PROFILE --}}
+                        {{#if (or damageSources.length healingSources.length)}}
+                        <div style="text-align: center; color: #ff6666; font-weight: bold; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px;">
+                            Incoming Threat Profile
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            {{#each damageSources}}
+                            <div style="background: rgba(255, 0, 0, 0.05); border: 1px solid #442222; padding: 6px 10px; border-radius: 3px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px dashed #442222; padding-bottom: 4px;">
+                                    <span style="font-weight: bold; color: #ff6666; font-size: 0.95em;"><i class="fas fa-skull" style="font-size: 0.8em; opacity: 0.7;"></i> {{source}}</span>
+                                    <span style="font-weight: bold; font-size: 0.95em;">
+                                        <span style="color: #ff6666;">{{total}} DMG</span>
+                                        {{#if mitigated}}<span style="color: #44aaff; font-size: 0.85em; margin-left: 5px;">({{mitigated}} BLKD)</span>{{/if}}
+                                    </span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; font-size: 0.8em; color: #aaa; padding-left: 15px;">
+                                    {{#each actions}}
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span>↳ {{name}}</span>
+                                        <span>{{value}}</span>
+                                    </div>
+                                    {{/each}}
+                                </div>
+                            </div>
+                            {{/each}}
+                            
+                            {{#each healingSources}}
+                            <div style="background: rgba(0, 255, 0, 0.05); border: 1px solid #224422; padding: 6px 10px; border-radius: 3px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px dashed #224422; padding-bottom: 4px;">
+                                    <span style="font-weight: bold; color: #44ff44; font-size: 0.95em;"><i class="fas fa-heart" style="font-size: 0.8em; opacity: 0.7;"></i> {{source}}</span>
+                                    <span style="font-weight: bold; font-size: 0.95em; color: #44ff44;">{{total}} HEAL</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; font-size: 0.8em; color: #aaa; padding-left: 15px;">
+                                    {{#each actions}}
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span>↳ {{name}}</span>
+                                        <span>{{value}}</span>
+                                    </div>
+                                    {{/each}}
+                                </div>
+                            </div>
+                            {{/each}}
+                        </div>
+                        {{/if}}
+
+                        {{!-- PC APPLIED VS MITIGATED CHART --}}
+                        {{#if takenPieSlices.length}}
+                        <div style="background: rgba(0,0,0,0.3); border: 1px solid #333; padding: 10px; margin-top: 10px; border-radius: 4px;">
+                            <div style="text-align: center; color: #ff6666; font-weight: bold; font-size: 0.85em; text-transform: uppercase; margin-bottom: 10px;">Applied vs. Mitigated Damage</div>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+                                <svg viewBox="0 0 100 100" style="width: 80px; height: 80px; transform: rotate(-90deg); overflow: visible !important;">
+                                    {{#each takenPieSlices}}
+                                        <path d="{{path}}" fill="{{color}}" stroke="#111" stroke-width="0.5" data-tooltip="{{tooltip}}"></path>
+                                    {{/each}}
+                                </svg>
+                                <div style="display: flex; flex-direction: column; gap: 2px; max-height: 80px; overflow-y: auto; font-size: 0.75em; color: #eee; padding-right: 10px;">
+                                    {{#each takenLegendItems}}
+                                        <span data-tooltip="{{tooltip}}"><i class="fas fa-square" style="color: {{color}};"></i> {{name}}</span>
+                                    {{/each}}
+                                </div>
+                            </div>
+                        </div>
+                        {{/if}}
+
+                        <details style="margin-top: 15px; border-top: 1px dashed #444; padding-top: 10px;">
+                            <summary style="color: #aaa; font-size: 0.85em; cursor: pointer; outline: none;">
+                                <i class="fas fa-list"></i> Show Raw Event Logs
+                            </summary>
+                            <div style="max-height: 200px; overflow-y: auto; margin-top: 8px; background: rgba(0,0,0,0.6); border: 1px solid #222;">
+                                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85em;">
+                                    <thead style="background: rgba(20, 20, 25, 0.9); border-bottom: 2px solid #444;">
+                                        <tr style="color: #888; text-transform: uppercase;">
+                                            <th style="padding: 6px;">Rnd</th><th style="padding: 6px;">Target</th><th style="padding: 6px;">Action</th><th style="padding: 6px; text-align: right;">Result</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {{#each logs}}
+                                        <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                                            <td style="padding: 6px; color: #777;">{{round}}</td>
+                                            <td style="padding: 6px; color: #aaa;">{{target}}</td>
+                                            <td style="padding: 6px; color: #ddd;">{{name}}</td>
+                                            <td style="padding: 6px; text-align: right; color: {{#if (eq type 'Damage')}}#ff6666{{else if (eq type 'Heal')}}#44ff44{{else}}#ffcc00{{/if}};">
+                                                {{{result}}}
+                                                {{#if ../../canAudit}}
+                                                    <a data-action="reassignLog" data-log-id="{{id}}" style="color: #44aaff; cursor: pointer; margin-left: 8px;" title="Audit / Reassign Action"><i class="fas fa-edit"></i></a>
+                                                    <a data-action="deleteLog" data-log-id="{{id}}" style="color: #ff4444; cursor: pointer; margin-left: 8px;" title="Delete Log"><i class="fas fa-trash"></i></a>
+                                                {{/if}}
+                                            </td>
+                                        </tr>
+                                        {{/each}}
+                                    </tbody>
+                                </table>
+                            </div>
+                       </details>
+
+                    </div>
+                </details>
+                {{/each}}
+                {{/if}}
+
+                {{#if npcs.length}}
+                <div class="actor-faction-header actor-faction-enemy">
+                    <i class="fas fa-skull" style="color: #ff4444; margin-right: 5px;"></i> Enemies & Monsters
+                </div>
+                {{#each npcs}}
+                <details class="forensics-actor-overview" data-actor="{{name}}" {{#if (lookup ../expandedActors name)}}open{{/if}}>
+                    <summary style="padding: 10px; outline: none; cursor: pointer;">
+                        <div class="actor-summary-header">
+                            <span class="actor-name-row"><i class="fas fa-caret-right disclosure-arrow"></i>{{name}}</span>
+                            <span class="actor-metrics-row">
+                               {{#if ../canAudit}}
+                                <a data-action="swapAllegiance" data-actor="{{name}}" style="margin-right: 15px; color: #aaa; cursor: pointer; font-size: 0.9em;"><i class="fas fa-exchange-alt"></i></a>
+                                {{/if}}
+                                <span style="color: #aaa; font-size: 0.85em; margin-right: 12px; font-weight: normal;" title="Average Turn Length / Max Turn Length"><i class="far fa-clock"></i> {{avgTurnTimeStr}} <span style="color: #666;">/</span> {{maxTurnTimeStr}}</span>
+                                <span style="color: #fff;">{{damageDealt}} DMG</span> <span style="color: #888; font-size: 0.8em;">({{dpr}} DPR)</span>
+                                <span style="color: #ffaa00; margin-left: 5px; font-size: 0.9em;">[{{kills}}K / {{assists}}A]</span>
+                                {{#if healingDealt}}<span style="color: #44ff44; margin-left: 5px;">| {{healingDealt}} HEAL</span>{{/if}}
+                            </span>
+                        </div>
+                        <div class="actor-health-bar-container large-bar">
+                            <div style="width: {{damagePercent}}%; background: linear-gradient(90deg, var(--forensics-enemy-grad) 0%, var(--forensics-enemy-main) 100%); height: 100%;">
+                                <span class="bar-label">{{damagePercent}}%</span>
+                            </div>
+                        </div>
+                    </summary>
+                    
+                    <div style="background: rgba(15, 15, 20, 0.95); padding: 10px; border-top: 1px solid #444;">
+                        <div style="display: flex; flex-wrap: wrap; justify-content: space-around; text-align: center; margin-bottom: 15px; border-bottom: 1px dashed #333; padding-bottom: 15px; gap: 10px;">
+                            <div>
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Average d20</div>
+                                <div style="color: #ffcc00; font-weight: bold; font-size: 1.2em;">{{avgD20Display}}</div>
+                            </div>
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Best Action</div>
+                                <div style="color: #44aaff; font-weight: bold; font-size: 1.2em;">{{maxDamageDealt}} DMG</div>
+                            </div>
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Hardest Hit Taken</div>
+                                <div style="color: #ff6666; font-weight: bold; font-size: 1.2em;">{{maxDamageTaken}} DMG</div>
+                            </div>
+                            <div style="border-left: 1px solid #333; padding-left: 15px;" data-tooltip="{{dodgeTooltip}}">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Dodge Chance</div>
+                                <div style="color: #44ffaa; font-weight: bold; font-size: 1.2em;">{{dodgeChance}}%</div>
+                            </div>
+                            <div style="border-left: 1px solid #333; padding-left: 15px;" data-tooltip="{{saveTooltip}}">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Resist Chance</div>
+                                <div style="color: #aa44ff; font-weight: bold; font-size: 1.2em;">{{saveChance}}%</div>
+                            </div>
+                            <div class="metric-group">
+    <div class="metric-label">Shots Interrupted</div>
+    <div class="metric-value">
+        <span style="color: #ff6666;" title="Enemy shots you blocked">{{advanced.interruptedEnemy}}</span> 
+        <span style="color: #888;">/</span> 
+        <span style="color: #44aaff;" title="Friendly shots you blocked">{{advanced.interruptedFriendly}}</span>
+    </div>
+</div>
+                            {{#if maxHealDealt}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Biggest Heal</div>
+                                <div style="color: #44ff44; font-weight: bold; font-size: 1.2em;">{{maxHealDealt}} HP</div>
+                            </div>
+                            {{/if}}
+                            {{#if mitigated}}
+                            <div style="border-left: 1px solid #333; padding-left: 15px;">
+                                <div style="font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 1px;">Total Blocked</div>
+                                <div style="color: #44aaff; font-weight: bold; font-size: 1.2em;">{{mitigated}} BLKD</div>
+                            </div>
+                            {{/if}}
+                        </div>
+
+                        {{#if abilityBreakdown.length}}
+                        <div style="text-align: center; color: #ffaa00; font-weight: bold; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px;">
+                            Ability Output Profile
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            {{#each abilityBreakdown}}
+                            {{#if (or damage healing)}}
+                            <div style="background: rgba(0,0,0,0.4); border: 1px solid #333; padding: 6px 10px; border-radius: 3px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <span style="font-weight: bold; color: #eee; font-size: 0.95em;">{{name}}</span>
+                                    <span style="font-weight: bold; font-size: 0.95em;">
+                                        {{#if damage}}<span style="color: #ff6666;">{{damage}} DMG</span> <span style="color: #888; font-weight: normal; font-size: 0.8em;">({{dmgPct}}%)</span>{{/if}}
+                                        {{#if hasBoth}} <span style="color: #666;">|</span> {{/if}}
+                                        {{#if healing}}<span style="color: #44ff44;">{{healing}} HEAL</span>{{/if}}
+                                    </span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: #888;">
+                                    <span>Uses: <span style="color: #ccc; font-weight: bold;">{{casts}}</span></span>
+                                    <span>Damage Instances: <span style="color: #ccc; font-weight: bold;">{{damageInstances}}</span></span>
+                                </div>
+                            </div>
+                            {{/if}}
+                            {{/each}}
+                        </div>
+                        {{/if}}
+
+                        {{!-- MINION NESTING (MOVED) --}}
+                        {{#if minions.length}}
+                        <div style="margin-top: 15px; border-top: 2px dashed #444; padding-top: 10px;">
+                            <div style="font-size: 0.85em; color: #ffaa00; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; text-align: center;"><i class="fas fa-paw"></i> Minions & Summons</div>
+                            {{#each minions}}
+                            <details style="background: rgba(0,0,0,0.6); border: 1px solid #333; border-radius: 4px; margin-bottom: 8px;">
+                                <summary style="padding: 10px; outline: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; border-bottom: 1px solid transparent;">
+                                    <span style="color: #eee; font-weight: bold;"><i class="fas fa-caret-right disclosure-arrow" style="margin-right: 5px;"></i>{{name}}</span>
+                                    <span style="color: #aaa;">
+                                        <span style="color: #ff6666; margin-right: 8px;">{{damageDealt}} DMG</span>
+                                        <span style="color: #44ff44; margin-right: 8px;">{{healingDealt}} HEAL</span>
+                                        <span style="color: #44aaff;">{{mitigated}} BLKD</span>
+                                    </span>
+                                </summary>
+                                <div style="padding: 10px; border-top: 1px solid #333; display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-around; text-align: center; background: rgba(20, 20, 25, 0.95);">
+                                    <div>
+                                        <div style="font-size: 0.7em; color: #888; text-transform: uppercase;">Dodge</div>
+                                        <div style="color: #44ffaa; font-weight: bold; font-size: 1.1em;">{{dodgeChance}}%</div>
+                                    </div>
+                                    <div style="border-left: 1px solid #444; padding-left: 15px;">
+                                        <div style="font-size: 0.7em; color: #888; text-transform: uppercase;">Saves</div>
+                                        <div style="color: #aa44ff; font-weight: bold; font-size: 1.1em;">{{saveChance}}%</div>
+                                    </div>
+                                    <div style="border-left: 1px solid #444; padding-left: 15px;">
+                                        <div style="font-size: 0.7em; color: #888; text-transform: uppercase;">Best Hit</div>
+                                        <div style="color: #44aaff; font-weight: bold; font-size: 1.1em;">{{maxDamageDealt}}</div>
+                                    </div>
+                                </div>
+                            </details>
+                            {{/each}}
+                        </div>
+                        {{/if}}
+
+                        {{!-- NPC CASCADING THREAT PROFILE --}}
+                        {{#if (or damageSources.length healingSources.length)}}
+                        <div style="text-align: center; color: #ff6666; font-weight: bold; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px;">
+                            Incoming Threat Profile
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            {{#each damageSources}}
+                            <div style="background: rgba(255, 0, 0, 0.05); border: 1px solid #442222; padding: 6px 10px; border-radius: 3px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px dashed #442222; padding-bottom: 4px;">
+                                    <span style="font-weight: bold; color: #ff6666; font-size: 0.95em;"><i class="fas fa-crosshairs" style="font-size: 0.8em; opacity: 0.7;"></i> {{source}}</span>
+                                    <span style="font-weight: bold; font-size: 0.95em;">
+                                        <span style="color: #ff6666;">{{total}} DMG</span>
+                                        {{#if mitigated}}<span style="color: #44aaff; font-size: 0.85em; margin-left: 5px;">({{mitigated}} BLKD)</span>{{/if}}
+                                    </span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; font-size: 0.8em; color: #aaa; padding-left: 15px;">
+                                    {{#each actions}}
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span>↳ {{name}}</span>
+                                        <span>{{value}}</span>
+                                    </div>
+                                    {{/each}}
+                                </div>
+                            </div>
+                            {{/each}}
+                            
+                            {{#each healingSources}}
+                            <div style="background: rgba(0, 255, 0, 0.05); border: 1px solid #224422; padding: 6px 10px; border-radius: 3px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; border-bottom: 1px dashed #224422; padding-bottom: 4px;">
+                                    <span style="font-weight: bold; color: #44ff44; font-size: 0.95em;"><i class="fas fa-heart" style="font-size: 0.8em; opacity: 0.7;"></i> {{source}}</span>
+                                    <span style="font-weight: bold; font-size: 0.95em; color: #44ff44;">{{total}} HEAL</span>
+                                </div>
+                                <div style="display: flex; flex-direction: column; font-size: 0.8em; color: #aaa; padding-left: 15px;">
+                                    {{#each actions}}
+                                    <div style="display: flex; justify-content: space-between;">
+                                        <span>↳ {{name}}</span>
+                                        <span>{{value}}</span>
+                                    </div>
+                                    {{/each}}
+                                </div>
+                            </div>
+                            {{/each}}
+                        </div>
+                        {{/if}}
+
+                        {{!-- NPC APPLIED VS MITIGATED CHART --}}
+                        {{#if takenPieSlices.length}}
+                        <div style="background: rgba(0,0,0,0.3); border: 1px solid #333; padding: 10px; margin-top: 10px; border-radius: 4px;">
+                            <div style="text-align: center; color: #ff6666; font-weight: bold; font-size: 0.85em; text-transform: uppercase; margin-bottom: 10px;">Applied vs. Mitigated Damage</div>
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+                                <svg viewBox="0 0 100 100" style="width: 80px; height: 80px; transform: rotate(-90deg); overflow: visible !important;">
+                                    {{#each takenPieSlices}}
+                                        <path d="{{path}}" fill="{{color}}" stroke="#111" stroke-width="0.5" data-tooltip="{{tooltip}}"></path>
+                                    {{/each}}
+                                </svg>
+                                <div style="display: flex; flex-direction: column; gap: 2px; max-height: 80px; overflow-y: auto; font-size: 0.75em; color: #eee; padding-right: 10px;">
+                                    {{#each takenLegendItems}}
+                                        <span data-tooltip="{{tooltip}}"><i class="fas fa-square" style="color: {{color}};"></i> {{name}}</span>
+                                    {{/each}}
+                                </div>
+                            </div>
+                        </div>
+                        {{/if}}
+
+                        <details style="margin-top: 15px; border-top: 1px dashed #444; padding-top: 10px;">
+                            <summary style="color: #aaa; font-size: 0.85em; cursor: pointer; outline: none;">
+                                <i class="fas fa-list"></i> Show Raw Event Logs
+                            </summary>
+                            <div style="max-height: 200px; overflow-y: auto; margin-top: 8px; background: rgba(0,0,0,0.6); border: 1px solid #222;">
+                                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85em;">
+                                    <thead style="background: rgba(20, 20, 25, 0.9); border-bottom: 2px solid #444;">
+                                        <tr style="color: #888; text-transform: uppercase;">
+                                            <th style="padding: 6px;">Rnd</th><th style="padding: 6px;">Target</th><th style="padding: 6px;">Action</th><th style="padding: 6px; text-align: right;">Result</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {{#each logs}}
+                                        <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+                                            <td style="padding: 6px; color: #777;">{{round}}</td>
+                                            <td style="padding: 6px; color: #aaa;">{{target}}</td>
+                                            <td style="padding: 6px; color: #ddd;">{{name}}</td>
+                                            <td style="padding: 6px; text-align: right; color: {{#if (eq type 'Damage')}}#ff6666{{else if (eq type 'Heal')}}#44ff44{{else}}#ffcc00{{/if}};">
+                                                {{{result}}}
+                                                {{#if ../../canAudit}}
+                                                    <a data-action="reassignLog" data-log-id="{{id}}" style="color: #44aaff; cursor: pointer; margin-left: 8px;" title="Audit / Reassign Action"><i class="fas fa-edit"></i></a>
+                                                    <a data-action="deleteLog" data-log-id="{{id}}" style="color: #ff4444; cursor: pointer; margin-left: 8px;" title="Delete Log"><i class="fas fa-trash"></i></a>
+                                                {{/if}}
+                                            </td>
+                                        </tr>
+                                        {{/each}}
+                                    </tbody>
+                                </table>
+                            </div>
+                       </details>
+
+                    </div>
+                </details>
+                {{/each}}
+                {{/if}}
+            {{/if}}
+
+            {{#if (eq viewMode 'time')}}
+                <div style="background: rgba(10, 10, 15, 0.9); border: 1px solid #333;">
+                    <div style="display: flex; background: #111; border-bottom: 2px solid #444; position: sticky; top: 0; color: #888; text-transform: uppercase; font-size: 0.85em; font-weight: bold; padding: 6px 12px; z-index: 10;">
+                        <div style="flex: 0 0 10%;">Rnd</div>
+                        <div style="flex: 0 0 25%;">Source</div>
+                        <div style="flex: 0 0 25%;">Target</div>
+                        <div style="flex: 1; text-align: right;">Result</div>
+                    </div>
+
+                    {{#each rounds}}
+                        <div style="background: #222; color: #ffaa00; padding: 6px; text-align: center; font-weight: bold; border-bottom: 1px solid #444; border-top: 1px solid #444; margin-top: 5px; font-size: 0.85em; text-transform: uppercase;">
+                            ROUND {{roundNumber}}
+                        </div>
+                        {{#each logs}}
+                            {{#if isTurnSummary}}
+                                <div class="timeline-turn-summary" style="background: rgba(0,0,0,0.4); border-bottom: 1px dashed #333; padding: 6px; text-align: center; font-size: 0.85em;">
+                                    End of Turn: {{source}} ({{formattedTime}})
+                                </div>
+                            {{else}}
+                                <details class="forensics-action-card" style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); cursor: pointer;" data-log-id="{{id}}" {{#if (lookup ../../expandedLogs id)}}open{{/if}}>
+                                    <summary style="display: flex; list-style: none; padding: 8px 12px; align-items: center;">
+                                        <div style="flex: 0 0 10%; color: #777;">{{round}}</div>
+                                        <div style="flex: 0 0 25%; color: #44aaff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{source}}</div>
+                                        <div style="flex: 0 0 25%; color: {{#if (eq target 'None')}}#888{{else}}#ff6666{{/if}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{target}}</div>
+                                        <div style="flex: 1; text-align: right; font-weight: bold; color: {{#if (eq type 'Damage')}}#ff6666{{else if (eq type 'Heal')}}#44ff44{{else}}#ffcc00{{/if}};">
+                                            {{{result}}}
+                                            {{#if ../../canAudit}}
+                                                <a data-action="reassignLog" data-log-id="{{id}}" style="color: #44aaff; cursor: pointer; margin-left: 8px;" title="Audit / Reassign Action"><i class="fas fa-edit"></i></a>
+                                                <a data-action="deleteLog" data-log-id="{{id}}" style="color: #ff4444; cursor: pointer; margin-left: 8px;" title="Delete Log"><i class="fas fa-trash"></i></a>
+                                            {{/if}}
+                                        </div>
+                                    </summary>
+                                    <div style="padding: 10px; background: rgba(0,0,0,0.5); font-family: monospace; font-size: 0.85em; border-top: 1px dashed #333;">
+                                        <div style="color: #ffaa00;">Action: {{name}}</div>
+                                        <div style="margin-top: 5px; color: #ccc;">{{{detail}}}</div>
+                                    </div>
+                                </details>
+                            {{/if}}
+                        {{/each}}
+                    {{/each}}
+                </div>
+            {{/if}}
+
+        {{else}}
+            <div style="text-align: center; color: #888; padding: 40px; font-style: italic;">
+                Awaiting tactical telemetry...
+            </div>
+        {{/if}}
+    </div>
+</div>
