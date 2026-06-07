@@ -645,43 +645,44 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
     $html.find(".apply-damage-btn").hide();
     $html.find(".roll-all-npcs-btn").hide();
     if (!message.isAuthor) $html.find(".roll-damage-btn").hide();
-    return; // Exit early for players
   }
 
   // 2. STATE-AWARE GM BEACONS (Damage & Apply)
-  (async () => {
-    // Async fetch to guarantee we know if the spell actually deals damage
-    let originItem = item;
-    if (!originItem && aoeData.itemUuid) {
-        try { originItem = await fromUuid(aoeData.itemUuid); } catch (e) {}
-    }
-    
-    const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
-    const itemHasDamage = aoeData.hazardDamage || 
-                          (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || 
-                          (aoeFlags.useCustomDamage && aoeFlags.customDamage);
-
-    // Pulse the Damage button red if damage exists but hasn't been rolled yet
-    if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
-        $html.find(".roll-damage-btn").addClass("er-pulse-gm");
-    }
-
-    // Check if there are valid targets awaiting final application
-    let hasUnappliedTargets = false;
-    for (const target of Object.values(aoeData.targets || {})) {
-        if (!target.hasApplied && (target.hasRolled || target.isHealing)) {
-            hasUnappliedTargets = true;
-            break;
+  if (isGM) {
+      (async () => {
+        // Async fetch to guarantee we know if the spell actually deals damage
+        let originItem = item;
+        if (!originItem && aoeData.itemUuid) {
+            try { originItem = await fromUuid(aoeData.itemUuid); } catch (e) {}
         }
-    }
+        
+        const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
+        const itemHasDamage = aoeData.hazardDamage || 
+                              (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || 
+                              (aoeFlags.useCustomDamage && aoeFlags.customDamage);
 
-    // Pulse the Apply button green ONLY if damage is resolved (or not needed) AND targets are waiting
-    if (hasUnappliedTargets) {
-        if (!itemHasDamage || (aoeData.damageTotal !== undefined && aoeData.damageTotal !== null)) {
-            $html.find(".apply-damage-btn").addClass("er-pulse-apply");
+        // Pulse the Damage button red if damage exists but hasn't been rolled yet
+        if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
+            $html.find(".roll-damage-btn").addClass("er-pulse-gm");
         }
-    }
-})();
+
+        // Check if there are valid targets awaiting final application
+        let hasUnappliedTargets = false;
+        for (const target of Object.values(aoeData.targets || {})) {
+            if (!target.hasApplied && (target.hasRolled || target.isHealing)) {
+                hasUnappliedTargets = true;
+                break;
+            }
+        }
+
+        // Pulse the Apply button green ONLY if damage is resolved (or not needed) AND targets are waiting
+        if (hasUnappliedTargets) {
+            if (!itemHasDamage || (aoeData.damageTotal !== undefined && aoeData.damageTotal !== null)) {
+                $html.find(".apply-damage-btn").addClass("er-pulse-apply");
+            }
+        }
+    })();
+  }
 
   $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
     event.preventDefault();
