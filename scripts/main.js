@@ -446,14 +446,7 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
           const originItem = await fromUuid(aoeData.itemUuid);
           const itemHasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
           
-          if (!itemHasDamage) {
-             const token = canvas.tokens.get(data.tokenId);
-             const saveContext = aoeData.isReactive ? "reactiveSave" : "save"; // PHASE ROUTER
-             if (token && token.actor) {
-                 await executeEffectRules([{ actor: token.actor, id: token.id, document: token.document }], saveContext, data.dos, originItem, targetMessage.actor, null);
-                 await targetMessage.update({ [`flags.${MODULE_ID}.targets.${data.tokenId}.hasApplied`]: true });
-             }
-          }
+         
 
         } else if (data.action === "updateDamageRoll") {
           await targetMessage.update({
@@ -857,12 +850,6 @@ if (saveType === "reflex") {
         rollTooltip: rollTooltip, degreeOfSuccess: dos, unadjustedDegreeOfSuccess: unadjustedDos
       };
 
-      // PHASE ROUTER
-      const saveContext = aoeData.isReactive ? "reactiveSave" : "save";
-      if (!hasDamage) {
-         await executeEffectRules([{ actor: token.actor, id: token.id, document: token.document }], saveContext, dos, originItem, message.actor, null);
-         updateData[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true;
-      }
     }
     
     if (Object.keys(updateData).length > 0) {
@@ -931,12 +918,7 @@ if (saveType === "reflex") {
     if (game.user.isGM) {
       let updatePayload = { hasRolled: true, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, degreeOfSuccess: dos, unadjustedDegreeOfSuccess: unadjustedDos, hasUsedHeroPoint: true, hasCover: false };
       
-      // PHASE ROUTER
-      const saveContext = aoeData.isReactive ? "reactiveSave" : "save";
-      if (!hasDamage) {
-         await executeEffectRules([{ actor: token.actor, id: token.id, document: token.document }], saveContext, dos, originItem, message.actor, null);
-         updatePayload.hasApplied = true;
-      }
+  
 
       const updateKey = `flags.${MODULE_ID}.targets.${tokenId}`;
       await message.update({ [updateKey]: updatePayload });
@@ -1025,12 +1007,7 @@ if (saveType === "reflex") {
     if (game.user.isGM) {
       let updatePayload = { hasRolled: true, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, degreeOfSuccess: dos, unadjustedDegreeOfSuccess: unadjustedDos, hasUsedHeroPoint: true };
       
-      // PHASE ROUTER
-      const saveContext = aoeData.isReactive ? "reactiveSave" : "save";
-      if (!hasDamage) {
-         await executeEffectRules([{ actor: token.actor, id: token.id, document: token.document }], saveContext, dos, originItem, message.actor, null);
-         updatePayload.hasApplied = true;
-      }
+    
 
       const updateKey = `flags.${MODULE_ID}.targets.${tokenId}`;
       await message.update({ [updateKey]: updatePayload });
