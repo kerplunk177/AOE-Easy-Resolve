@@ -365,6 +365,7 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
 
 const renderData = {
   ignoreAoE: flags.ignoreAoE || false,
+  enableMultiTarget: flags.enableMultiTarget || false,
   useOverride: flags.useOverride || false,
   provideTemplate: flags.provideTemplate || false,
   isCone: flags.templateType === "cone" || !flags.templateType,
@@ -502,27 +503,37 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
   if (item && !isRollCard) {
     if ($html.find(".er-template-toolbar").length === 0) {
       
-      let buttonsHtml = `<div class="er-template-toolbar" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;">`;
-      
-      if (flags.provideTemplate) {
-          buttonsHtml += `
-            <button type="button" class="er-draw-shape-btn" data-shape="burst" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-circle"></i> Burst</button>
-            <button type="button" class="er-draw-shape-btn" data-shape="cone" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-play"></i> Cone</button>
-            <button type="button" class="er-draw-shape-btn" data-shape="line" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-ruler-horizontal"></i> Line</button>
-          `;
-      }
-      if (isTactical) {
-          buttonsHtml += `
-            <button type="button" class="er-draw-rect-btn" title="Contiguous Squares" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-th-large"></i> Rect</button>
-            <button type="button" class="er-draw-poly-btn" title="Freehand Shape" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-draw-polygon"></i> Free</button>
-          `;
-      }
-      buttonsHtml += `</div>`;
-      
-      if (flags.provideTemplate || isTactical) {
+      const hasTemplateTools = flags.provideTemplate || isTactical;
+      const hasMultiTarget = flags.enableMultiTarget;
+
+      // Only draw the toolbar if at least one feature is explicitly enabled
+      if (hasTemplateTools || hasMultiTarget) {
+          let buttonsHtml = `<div class="er-template-toolbar" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;">`;
+          
+          if (flags.provideTemplate) {
+              buttonsHtml += `
+                <button type="button" class="er-draw-shape-btn" data-shape="burst" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-circle"></i> Burst</button>
+                <button type="button" class="er-draw-shape-btn" data-shape="cone" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-play"></i> Cone</button>
+                <button type="button" class="er-draw-shape-btn" data-shape="line" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-ruler-horizontal"></i> Line</button>
+              `;
+          }
+          if (isTactical) {
+              buttonsHtml += `
+                <button type="button" class="er-draw-rect-btn" title="Contiguous Squares" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-th-large"></i> Rect</button>
+                <button type="button" class="er-draw-poly-btn" title="Freehand Shape" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-draw-polygon"></i> Free</button>
+              `;
+          }
+          
+          // Strictly isolate the new multi-target button
+          if (hasMultiTarget) {
+              buttonsHtml += `
+                <button type="button" class="er-resolve-targets-btn" title="Resolve on currently targeted tokens" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-bullseye"></i> Resolve Targets</button>
+              `;
+          }
+          buttonsHtml += `</div>`;
+          
           $html.find(".message-content").append(buttonsHtml);
       }
-
       const prepCache = () => {
         let finalDC = flags.useOverride ? flags.saveDC : (item.system?.defense?.save?.dc?.value || null);
         let finalType = flags.useOverride ? flags.saveType : (item.system?.defense?.save?.statistic || null);
@@ -579,6 +590,50 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
           ui.controls.initialize({ control: "regions", tool: "rectangle" });
           ui.notifications.info(`AoE Easy Resolve | Click and drag on the grid to draw a rectangular hazard.`);
       });
+      // --- MULTI-TARGET RESOLUTION LISTENER ---
+      $html.find(".er-resolve-targets-btn").off("click").on("click", async (ev) => {
+        ev.preventDefault();
+        console.log("AoE Easy Resolve | 'Resolve Targets' button clicked.");
+        
+        try {
+            const targets = Array.from(game.user.targets);
+            console.log(`AoE Easy Resolve | Found ${targets.length} highlighted targets.`);
+            
+            if (targets.length === 0) {
+                return ui.notifications.warn("AoE Easy Resolve | You must target tokens on the canvas first!");
+            }
+
+            let finalDC = flags.useOverride ? flags.saveDC : (item?.system?.defense?.save?.dc?.value || null);
+            let finalType = flags.useOverride ? flags.saveType : (item?.system?.defense?.save?.statistic || null);
+
+            if (!finalDC) {
+                const dcMatch = $html.text().match(/DC\s*(\d+)/i);
+                if (dcMatch) finalDC = parseInt(dcMatch[1], 10);
+            }
+            if (!finalType) {
+                const cardText = $html.text().toLowerCase();
+                if (cardText.includes("fortitude")) finalType = "fortitude";
+                else if (cardText.includes("will")) finalType = "will";
+                else finalType = "reflex"; 
+            }
+
+            console.log("AoE Easy Resolve | Sending targets to generator...");
+            await generateTemplateCard(null, {
+                itemName: item?.name || "Targeted Effects", 
+                saveType: finalType, 
+                saveDC: finalDC, 
+                isBasicSave: item?.system?.defense?.save?.basic ?? true, 
+                originItem: item, 
+                hazardDamage: flags.hazardDamage || null,
+                hazardDuration: flags.hazardDuration || null,
+                originMessageId: message.id,
+                preselectedTargets: targets
+            });
+            
+        } catch (err) {
+            console.error("AoE Easy Resolve | Fatal error resolving targets:", err);
+        }
+    });
     }
   }
 
@@ -1555,229 +1610,245 @@ async function createVisualBurst(doc, colorHex) {
   }
 }
 // --- TEMPLATE CONVERSION ENGINE ---
+// --- TEMPLATE CONVERSION ENGINE ---
 async function generateTemplateCard(doc, cfg) {
-  await new Promise(resolve => setTimeout(resolve, 300));
+  try {
+      await new Promise(resolve => setTimeout(resolve, 300));
 
-  const rules = Array.isArray(cfg.originItem?.flags?.[MODULE_ID]?.rules) ? cfg.originItem.flags[MODULE_ID].rules : Object.values(cfg.originItem?.flags?.[MODULE_ID]?.rules || {});
-  const persistentRules = rules.filter(r => ["tokenEnter", "tokenExit", "tokenMove", "turnStart", "turnEnd"].includes(r.context));
+      const rules = Array.isArray(cfg.originItem?.flags?.[MODULE_ID]?.rules) ? cfg.originItem.flags[MODULE_ID].rules : Object.values(cfg.originItem?.flags?.[MODULE_ID]?.rules || {});
+      const persistentRules = rules.filter(r => ["tokenEnter", "tokenExit", "tokenMove", "turnStart", "turnEnd"].includes(r.context));
 
-  const eventMapping = { 
-    "tokenEnter": ["tokenMoveIn"], 
-    "tokenExit": ["tokenMoveOut"], 
-    "tokenMove": ["tokenMoveWithin"],
-    "turnStart": ["turnStart", "tokenTurnStart"], 
-    "turnEnd": ["turnEnd", "tokenTurnEnd"] 
-  };
-  const subscribedEvents = [...new Set(persistentRules.flatMap(r => eventMapping[r.context] || []))];
-
-  // --- FORCED CONVERTER: Delete the template and replace it with a true V14 Region ---
-  if (doc.documentName === "MeasuredTemplate" && persistentRules.length > 0) {
-    let regionShapes = [];
-    const distance = doc.distance || 15;
-    const pixels = (distance / canvas.dimensions.distance) * canvas.dimensions.size;
-    
-    if (doc.t === "circle") {
-      regionShapes.push({ type: "ellipse", hole: false, x: doc.x, y: doc.y, radiusX: pixels, radiusY: pixels, rotation: 0 });
-    } else if (doc.object?.shape?.points) {
-      const pts = doc.object.shape.points;
-      const globalPts = [];
-      for (let i = 0; i < pts.length; i += 2) {
-          globalPts.push(pts[i] + doc.x, pts[i+1] + doc.y);
-      }
-      regionShapes.push({ type: "polygon", hole: false, points: globalPts });
-    }
-
-    if (regionShapes.length > 0) {
-      const behaviorData = {
-        name: `AoE Easy Resolve Controller`,
-        type: `executeScript`,
-        system: {
-            events: subscribedEvents,
-            source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
-        }
+      const eventMapping = {
+          "tokenEnter": ["tokenMoveIn"],
+          "tokenExit": ["tokenMoveOut"],
+          "tokenMove": ["tokenMoveWithin"],
+          "turnStart": ["turnStart", "tokenTurnStart"],
+          "turnEnd": ["turnEnd", "tokenTurnEnd"]
       };
+      const subscribedEvents = [...new Set(persistentRules.flatMap(r => eventMapping[r.context] || []))];
 
-      const regionData = {
-        name: `${cfg.itemName} (AoE Hazard)`,
-        color: game.user.color,
-        shapes: regionShapes,
-        elevation: { bottom: -1000, top: 1000 }, 
-        behaviors: [behaviorData],
-        flags: { 
-            [MODULE_ID]: { 
-                isAoERegion: true, 
-                originItemUuid: cfg.originItem.uuid, 
-                persistentRules: persistentRules,
-                saveDC: cfg.saveDC, 
-                duration: cfg.hazardDuration || null
-            } 
-        }
-      };
-
-      const newRegions = await canvas.scene.createEmbeddedDocuments("Region", [regionData]);
-      await doc.delete(); 
-      doc = newRegions[0]; 
-      await new Promise(resolve => setTimeout(resolve, 200)); 
-      
-      await createVisualGhost(canvas.scene, doc, game.user.color);
-    }
-  } else if (doc.documentName === "Region" && persistentRules.length > 0) {
-    await doc.update({
-        [`flags.${MODULE_ID}.isAoERegion`]: true,
-        [`flags.${MODULE_ID}.originItemUuid`]: cfg.originItem.uuid,
-        [`flags.${MODULE_ID}.persistentRules`]: persistentRules,
-        [`flags.${MODULE_ID}.saveDC`]: cfg.saveDC,
-        [`flags.${MODULE_ID}.duration`]: cfg.hazardDuration || null
-    });
-
-    const hasBehavior = doc.behaviors?.some(b => b.name === `AoE Easy Resolve Controller`);
-    if (!hasBehavior) {
-      await doc.createEmbeddedDocuments("RegionBehavior", [{
-          name: `AoE Easy Resolve Controller`,
-          type: `executeScript`,
-          system: {
-              events: subscribedEvents,
-              source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
+      // --- FORCED CONVERTER ---
+      if (doc && doc.documentName === "MeasuredTemplate" && persistentRules.length > 0) {
+          let regionShapes = [];
+          const distance = doc.distance || 15;
+          const pixels = (distance / canvas.dimensions.distance) * canvas.dimensions.size;
+          
+          if (doc.t === "circle") {
+              regionShapes.push({ type: "ellipse", hole: false, x: doc.x, y: doc.y, radiusX: pixels, radiusY: pixels, rotation: 0 });
+          } else if (doc.object?.shape?.points) {
+              const pts = doc.object.shape.points;
+              const globalPts = [];
+              for (let i = 0; i < pts.length; i += 2) {
+                  globalPts.push(pts[i] + doc.x, pts[i+1] + doc.y);
+              }
+              regionShapes.push({ type: "polygon", hole: false, points: globalPts });
           }
-      }]);
-    }
-    
-    await createVisualGhost(canvas.scene, doc, game.user.color);
-  }
 
-  let targetedTokens = [];
-  if (doc.documentName === "Region") {
-    if (doc.tokens && doc.tokens.size > 0) {
-        targetedTokens = Array.from(doc.tokens);
-    } else {
-        targetedTokens = canvas.tokens.placeables.filter(token => {
-            if (typeof doc.testPoint === "function") {
-                return doc.testPoint({ x: token.center.x, y: token.center.y, elevation: token.document.elevation });
-            } else if (doc.object && doc.object.shape) {
-                return doc.object.shape.contains(token.center.x - doc.x, token.center.y - doc.y);
-            }
-            return false;
-        });
-    }
-  } else if (doc.documentName === "MeasuredTemplate") {
-    const templateObj = doc.object;
-    if (templateObj && templateObj.shape) {
-      targetedTokens = canvas.tokens.placeables.filter(token => templateObj.shape.contains(token.center.x - doc.x, token.center.y - doc.y));
-    }
-  }
+          if (regionShapes.length > 0) {
+              const behaviorData = {
+                  name: `AoE Easy Resolve Controller`,
+                  type: `executeScript`,
+                  system: {
+                      events: subscribedEvents,
+                      source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
+                  }
+              };
 
-  targetedTokens = targetedTokens.map(t => t.document ? t.document : t).filter(Boolean);
- // Visual Confirmation that automation succeeded (Moved above the empty-check)
- createVisualBurst(doc, game.user.color);
+              const regionData = {
+                  name: `${cfg.itemName} (AoE Hazard)`,
+                  color: game.user.color,
+                  shapes: regionShapes,
+                  elevation: { bottom: -1000, top: 1000 }, 
+                  behaviors: [behaviorData],
+                  flags: { 
+                      [MODULE_ID]: { 
+                          isAoERegion: true, 
+                          originItemUuid: cfg.originItem.uuid, 
+                          persistentRules: persistentRules,
+                          saveDC: cfg.saveDC, 
+                          duration: cfg.hazardDuration || null
+                      } 
+                  }
+              };
 
- const hasPersistent = persistentRules.length > 0;
- if (targetedTokens.length === 0) { 
-   ui.notifications.info("AoE Easy Resolve | No targets initially caught in the blast area.");
-    if (!hasPersistent) {
-      setTimeout(async () => { try { await doc.delete(); } catch(e) {} }, 100);
-      return; 
-    }
-  }
-
-  let tauntNoticeHtml = "";
-  const casterActor = cfg.originItem?.actor;
-  if (casterActor) {
-      const tauntEffect = casterActor.items.find(i => i.getFlag('world', 'guardianTaunter'));
-      if (tauntEffect) {
-          const guardianId = tauntEffect.getFlag('world', 'guardianTaunter');
-          let targetedAllies = false;
-          let targetedGuardian = false;
-
-          targetedTokens.forEach(t => {
-              if (t.actor?.id === guardianId) targetedGuardian = true;
-              else if (t.actor?.alliance === 'party') targetedAllies = true;
+              const newRegions = await canvas.scene.createEmbeddedDocuments("Region", [regionData]);
+              await doc.delete(); 
+              doc = newRegions[0]; 
+              await new Promise(resolve => setTimeout(resolve, 200)); 
+              
+              await createVisualGhost(canvas.scene, doc, game.user.color);
+          }
+      } else if (doc && doc.documentName === "Region" && persistentRules.length > 0) {
+          await doc.update({
+              [`flags.${MODULE_ID}.isAoERegion`]: true,
+              [`flags.${MODULE_ID}.originItemUuid`]: cfg.originItem.uuid,
+              [`flags.${MODULE_ID}.persistentRules`]: persistentRules,
+              [`flags.${MODULE_ID}.saveDC`]: cfg.saveDC,
+              [`flags.${MODULE_ID}.duration`]: cfg.hazardDuration || null
           });
 
-          if (targetedAllies && !targetedGuardian) {
-              if (cfg.saveDC) {
-                  cfg.saveDC -= 1;
-                  tauntNoticeHtml = `<div style="color: #d92c2c; background: rgba(217, 44, 44, 0.1); border: 1px solid #d92c2c; padding: 4px; text-align: center; font-weight: bold; margin-bottom: 6px;">Guardian Taunt Penalty:<br>DC Reduced by 1</div>`;
-              }
+          const hasBehavior = doc.behaviors?.some(b => b.name === `AoE Easy Resolve Controller`);
+          if (!hasBehavior) {
+              await doc.createEmbeddedDocuments("RegionBehavior", [{
+                  name: `AoE Easy Resolve Controller`,
+                  type: `executeScript`,
+                  system: {
+                      events: subscribedEvents,
+                      source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
+                  }
+              }]);
+          }
+          
+          await createVisualGhost(canvas.scene, doc, game.user.color);
+      }
 
-              const alreadyOffGuard = casterActor.items.some(i => i.system?.slug === 'taunt-off-guard-penalty');
-              if (!alreadyOffGuard) {
-                  const offGuardEffect = {
-                      name: "Off-Guard (Taunt Penalty)",
-                      type: "effect",
-                      img: "systems/pf2e/icons/conditions/off-guard.webp",
-                      system: {
-                          slug: "taunt-off-guard-penalty",
-                          duration: { value: 1, unit: "rounds", expiry: "turn-start" },
-                          description: { value: "You ignored a Guardian's taunt. You are Off-Guard." },
-                          rules: [
-                              { key: "FlatModifier", selector: "ac", value: -2, type: "circumstance" },
-                              { key: "RollOption", domain: "all", option: "off-guard" }
-                          ]
-                      }
-                  };
-                  casterActor.createEmbeddedDocuments("Item", [offGuardEffect]);
-                  
-                  ChatMessage.create({
-                      speaker: ChatMessage.getSpeaker({ actor: casterActor }),
-                      flavor: `<strong>Taunt Penalty Triggered!</strong>`,
-                      content: `Because ${casterActor.name} caught an ally in their blast without including their taunter, their DC was reduced, and they are now <strong>Off-Guard</strong> until the start of their next turn.`
-                  });
+      let targetedTokens = [];
+      // 1. Uncouple the target fetcher
+      if (doc && doc.documentName === "Region") {
+          if (doc.tokens && doc.tokens.size > 0) {
+              targetedTokens = Array.from(doc.tokens);
+          } else {
+              targetedTokens = canvas.tokens.placeables.filter(token => {
+                  if (typeof doc.testPoint === "function") {
+                      return doc.testPoint({ x: token.center.x, y: token.center.y, elevation: token.document.elevation });
+                  } else if (doc.object && doc.object.shape) {
+                      return doc.object.shape.contains(token.center.x - doc.x, token.center.y - doc.y);
+                  }
+                  return false;
+              });
+          }
+      } else if (doc && doc.documentName === "MeasuredTemplate") {
+          const templateObj = doc.object;
+          if (templateObj && templateObj.shape) {
+              targetedTokens = canvas.tokens.placeables.filter(token => templateObj.shape.contains(token.center.x - doc.x, token.center.y - doc.y));
+          }
+      } else if (cfg.preselectedTargets) {
+          targetedTokens = cfg.preselectedTargets;
+      }
+
+      targetedTokens = targetedTokens.map(t => t.document ? t.document : t).filter(Boolean);
+
+      const hasPersistent = persistentRules.length > 0;
+      if (targetedTokens.length === 0) { 
+          ui.notifications.info("AoE Easy Resolve | No targets initially caught or selected."); 
+          if (!hasPersistent && doc) {
+              setTimeout(async () => { try { await doc.delete(); } catch(e) {} }, 100);
+          }
+          return; 
+      }
+
+      // 2. Multi-ping routing
+      if (doc) {
+          createVisualBurst(doc, game.user.color);
+      } else if (cfg.preselectedTargets) {
+          cfg.preselectedTargets.forEach(t => {
+              createVisualBurst({ x: t.center?.x || t.x, y: t.center?.y || t.y, object: t }, game.user.color);
+          });
+      }
+
+      let tauntNoticeHtml = "";
+      const casterActor = cfg.originItem?.actor;
+      if (casterActor) {
+          const tauntEffect = casterActor.items.find(i => i.getFlag('world', 'guardianTaunter'));
+          if (tauntEffect) {
+              const guardianId = tauntEffect.getFlag('world', 'guardianTaunter');
+              let targetedAllies = false;
+              let targetedGuardian = false;
+
+              targetedTokens.forEach(t => {
+                  if (t.actor?.id === guardianId) targetedGuardian = true;
+                  else if (t.actor?.alliance === 'party') targetedAllies = true;
+              });
+
+              if (targetedAllies && !targetedGuardian) {
+                  if (cfg.saveDC) {
+                      cfg.saveDC -= 1;
+                      tauntNoticeHtml = `<div style="color: #d92c2c; background: rgba(217, 44, 44, 0.1); border: 1px solid #d92c2c; padding: 4px; text-align: center; font-weight: bold; margin-bottom: 6px;">Guardian Taunt Penalty:<br>DC Reduced by 1</div>`;
+                  }
+
+                  const alreadyOffGuard = casterActor.items.some(i => i.system?.slug === 'taunt-off-guard-penalty');
+                  if (!alreadyOffGuard) {
+                      const offGuardEffect = {
+                          name: "Off-Guard (Taunt Penalty)",
+                          type: "effect",
+                          img: "systems/pf2e/icons/conditions/off-guard.webp",
+                          system: {
+                              slug: "taunt-off-guard-penalty",
+                              duration: { value: 1, unit: "rounds", expiry: "turn-start" },
+                              description: { value: "You ignored a Guardian's taunt. You are Off-Guard." },
+                              rules: [
+                                  { key: "FlatModifier", selector: "ac", value: -2, type: "circumstance" },
+                                  { key: "RollOption", domain: "all", option: "off-guard" }
+                              ]
+                          }
+                      };
+                      casterActor.createEmbeddedDocuments("Item", [offGuardEffect]);
+                      
+                      ChatMessage.create({
+                          speaker: ChatMessage.getSpeaker({ actor: casterActor }),
+                          flavor: `<strong>Taunt Penalty Triggered!</strong>`,
+                          content: `Because ${casterActor.name} caught an ally in their blast without including their taunter, their DC was reduced, and they are now <strong>Off-Guard</strong> until the start of their next turn.`
+                      });
+                  }
               }
           }
       }
+
+      const itemTraits = cfg.originItem?.system?.traits?.value || [];
+      const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
+      const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
+      const isHealingTrait = itemTraits.includes("healing");
+
+      const enemyBaseEffect = cfg.originItem?.flags?.[MODULE_ID]?.enemyBaseEffect || "standard";
+      const allyBaseEffect = cfg.originItem?.flags?.[MODULE_ID]?.allyBaseEffect || "standard";
+      const casterAlliance = cfg.originItem?.actor?.alliance || "party";
+
+      const targetsData = {};
+      targetedTokens.forEach(t => {
+          const negativeHealing = t.actor?.system?.attributes?.hp?.negativeHealing || false;
+          let effectType = "standard";
+
+          if (isVitality) effectType = negativeHealing ? "damage" : "heal";
+          else if (isVoid) effectType = negativeHealing ? "heal" : "damage";
+          else if (isHealingTrait) effectType = negativeHealing ? "none" : "heal";
+
+          if (effectType === "standard" && cfg.hazardDamage && cfg.hazardDamage.includes("healing")) effectType = negativeHealing ? "none" : "heal";
+
+          // Enforce Split Matrix
+          const targetAlliance = t.actor?.alliance;
+          const isAlly = targetAlliance === casterAlliance;
+          const forcedEffect = isAlly ? allyBaseEffect : enemyBaseEffect;
+          
+          if (forcedEffect === "heal") effectType = "heal";
+          if (forcedEffect === "immune") effectType = "none";
+
+          targetsData[t.id] = { 
+              id: t.id, name: t.name, img: t.texture.src, hasRolled: false, rollTotal: null, 
+              degreeOfSuccess: null, isHealing: effectType === "heal", isImmune: effectType === "none",
+              hasApplied: false
+          };
+      });
+
+      const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+      const formattedSaveType = cfg.saveType.charAt(0).toUpperCase() + cfg.saveType.slice(1);
+      
+      let htmlContent = await renderHBS(templatePath, { 
+          targets: formatTargetsData(targetsData), itemName: cfg.itemName, saveType: formattedSaveType, saveDC: cfg.saveDC,
+          damageTotal: null, damageBreakdown: null, damageFormula: null, damageTooltip: null, isGM: game.user.isGM
+      });
+
+      if (tauntNoticeHtml) {
+          htmlContent = tauntNoticeHtml + htmlContent;
+      }
+
+      await ChatMessage.create({
+          speaker: ChatMessage.getSpeaker(), content: htmlContent,
+          flags: { [MODULE_ID]: { templateId: doc ? doc.id : null, documentName: doc ? doc.documentName : "ManualTarget", itemUuid: cfg.originItem ? cfg.originItem.uuid : null, itemName: cfg.itemName, saveType: cfg.saveType, saveDC: cfg.saveDC, isBasicSave: cfg.isBasicSave, targets: targetsData, hazardDamage: cfg.hazardDamage || null, isReactive: false, originMessageId: cfg.originMessageId } }
+      });
+
+  } catch (err) {
+      console.error("AoE Easy Resolve | CRITICAL ERROR in generateTemplateCard:", err);
   }
-
-  const itemTraits = cfg.originItem?.system?.traits?.value || [];
-  const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
-  const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
-  const isHealingTrait = itemTraits.includes("healing");
-
-  const enemyBaseEffect = cfg.originItem?.flags?.[MODULE_ID]?.enemyBaseEffect || "standard";
-  const allyBaseEffect = cfg.originItem?.flags?.[MODULE_ID]?.allyBaseEffect || "standard";
-  const casterAlliance = cfg.originItem?.actor?.alliance || "party";
-
-  const targetsData = {};
-  targetedTokens.forEach(t => {
-    const negativeHealing = t.actor?.system?.attributes?.hp?.negativeHealing || false;
-    let effectType = "standard";
-
-    if (isVitality) effectType = negativeHealing ? "damage" : "heal";
-    else if (isVoid) effectType = negativeHealing ? "heal" : "damage";
-    else if (isHealingTrait) effectType = negativeHealing ? "none" : "heal";
-
-    if (effectType === "standard" && cfg.hazardDamage && cfg.hazardDamage.includes("healing")) effectType = negativeHealing ? "none" : "heal";
-
-    // Enforce Split Matrix
-    const targetAlliance = t.actor?.alliance;
-    const isAlly = targetAlliance === casterAlliance;
-    const forcedEffect = isAlly ? allyBaseEffect : enemyBaseEffect;
-    
-    if (forcedEffect === "heal") effectType = "heal";
-    if (forcedEffect === "immune") effectType = "none";
-
-    targetsData[t.id] = { 
-      id: t.id, name: t.name, img: t.texture.src, hasRolled: false, rollTotal: null, 
-      degreeOfSuccess: null, isHealing: effectType === "heal", isImmune: effectType === "none",
-      hasApplied: false
-    };
-  });
-
-  const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-  const formattedSaveType = cfg.saveType.charAt(0).toUpperCase() + cfg.saveType.slice(1);
-  
-  let htmlContent = await renderHBS(templatePath, { 
-    targets: formatTargetsData(targetsData), itemName: cfg.itemName, saveType: formattedSaveType, saveDC: cfg.saveDC,
-    damageTotal: null, damageBreakdown: null, damageFormula: null, damageTooltip: null, isGM: game.user.isGM
-  });
-
-  if (tauntNoticeHtml) {
-      htmlContent = tauntNoticeHtml + htmlContent;
-  }
-
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker(), content: htmlContent,
-    flags: { [MODULE_ID]: { templateId: doc.id, documentName: doc.documentName, itemUuid: cfg.originItem ? cfg.originItem.uuid : null, itemName: cfg.itemName, saveType: cfg.saveType, saveDC: cfg.saveDC, isBasicSave: cfg.isBasicSave, targets: targetsData, hazardDamage: cfg.hazardDamage || null, isReactive: false, originMessageId: cfg.originMessageId } }
-  });
 }
 
 const executeShapeProcessing = async (doc) => {
