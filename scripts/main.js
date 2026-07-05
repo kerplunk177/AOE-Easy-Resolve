@@ -433,14 +433,16 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
         if (!targetMessage) return;
 
         if (data.action === "updateSaveRoll") {
-          const updateKey = `flags.${MODULE_ID}.targets.${data.tokenId}`;
+          // Strict dot notation prevents Foundry from wiping the nested object
           await targetMessage.update({ 
-            [updateKey]: {
-              hasRolled: true, rollTotal: data.rollTotal, rollFormula: data.rollFormula,
-              rollTooltip: data.rollTooltip, degreeOfSuccess: data.dos, unadjustedDegreeOfSuccess: data.unadjustedDos,
-              hasUsedHeroPoint: data.hasUsedHeroPoint || false,
-              hasCover: data.hasCover || false
-            } 
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.hasRolled`]: true,
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.rollTotal`]: data.rollTotal,
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.rollFormula`]: data.rollFormula,
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.rollTooltip`]: data.rollTooltip,
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.degreeOfSuccess`]: data.dos,
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.unadjustedDegreeOfSuccess`]: data.unadjustedDos,
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.hasUsedHeroPoint`]: data.hasUsedHeroPoint || false,
+            [`flags.${MODULE_ID}.targets.${data.tokenId}.hasCover`]: data.hasCover || false
           });
 
           const aoeData = targetMessage.flags[MODULE_ID];
@@ -697,151 +699,165 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
 
   // 2. STATE-AWARE GM BEACONS (Damage & Apply)
   if (isGM) {
-      (async () => {
-        // Async fetch to guarantee we know if the spell actually deals damage
-        let originItem = item;
-        if (!originItem && aoeData.itemUuid) {
-            try { originItem = await fromUuid(aoeData.itemUuid); } catch (e) {}
-        }
-        
-        const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
-        const itemHasDamage = aoeData.hazardDamage || 
-                              (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || 
-                              (aoeFlags.useCustomDamage && aoeFlags.customDamage);
+    (async () => {
+      let originItem = item;
+      
+      // The Fix: Check the origin message FIRST to grab the item directly from memory
+      if (!originItem && aoeData.originMessageId) {
+          const originMsg = game.messages.get(aoeData.originMessageId);
+          if (originMsg) originItem = originMsg.item;
+      }
+      if (!originItem && aoeData.itemUuid) {
+          try { originItem = await fromUuid(aoeData.itemUuid); } catch (e) {}
+      }
+      
+      const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
+      const itemHasDamage = aoeData.hazardDamage || 
+                            (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || 
+                            (aoeFlags.useCustomDamage && aoeFlags.customDamage);
 
-        // Pulse the Damage button red if damage exists but hasn't been rolled yet
-        if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
-            $html.find(".roll-damage-btn").addClass("er-pulse-gm");
-        }
+      if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
+          $html.find(".roll-damage-btn").addClass("er-pulse-gm");
+      }
 
-        // Check if there are valid targets awaiting final application
-        let hasUnappliedTargets = false;
-        for (const target of Object.values(aoeData.targets || {})) {
-            if (!target.hasApplied && (target.hasRolled || target.isHealing)) {
-                hasUnappliedTargets = true;
-                break;
-            }
-        }
+      let hasUnappliedTargets = false;
+      for (const target of Object.values(aoeData.targets || {})) {
+          if (!target.hasApplied && (target.hasRolled || target.isHealing)) {
+              hasUnappliedTargets = true;
+              break;
+          }
+      }
 
-        // Pulse the Apply button green ONLY if damage is resolved (or not needed) AND targets are waiting
-        if (hasUnappliedTargets) {
-            if (!itemHasDamage || (aoeData.damageTotal !== undefined && aoeData.damageTotal !== null)) {
-                $html.find(".apply-damage-btn").addClass("er-pulse-apply");
-            }
-        }
-    })();
+      if (hasUnappliedTargets) {
+          if (!itemHasDamage || (aoeData.damageTotal !== undefined && aoeData.damageTotal !== null)) {
+              $html.find(".apply-damage-btn").addClass("er-pulse-apply");
+          }
+      }
+  })();
+}
+
+$html.find(".roll-damage-btn").off("click").on("click", async (event) => {
+  event.preventDefault();
+  const aoeData = message.flags[MODULE_ID];
+  
+  let originItem = null;
+  if (aoeData.originMessageId) {
+      const originMsg = game.messages.get(aoeData.originMessageId);
+      if (originMsg) originItem = originMsg.item;
+  }
+  if (!originItem && aoeData.itemUuid) { 
+      try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {} 
   }
 
-  $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
-    event.preventDefault();
-    const aoeData = message.flags[MODULE_ID];
-    
-    let originItem = null;
-    if (aoeData.originMessageId) {
-        const originMsg = game.messages.get(aoeData.originMessageId);
-        if (originMsg) originItem = originMsg.item;
-    }
-    if (!originItem && aoeData.itemUuid) { 
-        try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {} 
-    }
+  const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
+  const hazardDamage = aoeData.hazardDamage; 
+  
+  const useCustomDamage = aoeFlags.useCustomDamage || !!hazardDamage;
+  const customDamageFormula = hazardDamage || aoeFlags.customDamage;
+  const customDamageType = aoeFlags.customDamageType;
 
-    const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
-    const hazardDamage = aoeData.hazardDamage; 
-    
-    const useCustomDamage = aoeFlags.useCustomDamage || !!hazardDamage;
-    const customDamageFormula = hazardDamage || aoeFlags.customDamage;
-    const customDamageType = aoeFlags.customDamageType;
+  let dRoll = null;
+  let dmgMsg = null;
 
-    let dRoll = null;
-    let dmgMsg = null;
-
-    if (useCustomDamage && customDamageFormula) {
-      const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
-      try {
-        let safeFormula = customDamageFormula.replace(/\]\s*\+\s*/g, "], ");
-        const fullFormula = customDamageType ? `(${safeFormula})[${customDamageType}]` : safeFormula;
-        dRoll = new pf2eDamageClass(fullFormula);
-        await dRoll.evaluate({ async: true });
-      } catch (e) {
-        ui.notifications.error(`AoE Easy Resolve | Invalid custom damage formula: ${customDamageFormula}`);
-        return;
-      }
-    } else if (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) {
-      const rollOptions = { event: event };
-      
-      if (aoeData.castLevel) rollOptions.spellLevel = parseInt(aoeData.castLevel, 10);
-
-      const rollResult = await originItem.rollDamage(rollOptions);
-      if (!rollResult) return;
-      if (rollResult.rolls?.length > 0) {
-        dRoll = rollResult.rolls[0];
-        dmgMsg = rollResult;
-      } else if (Array.isArray(rollResult) && rollResult[0]?.rolls?.length > 0) {
-        dRoll = rollResult[0].rolls[0];
-        dmgMsg = rollResult[0];
-      } else if (rollResult.total !== undefined) dRoll = rollResult;
-    } else {
-      ui.notifications.info("AoE Easy Resolve | This item has no damage configured.");
+  if (useCustomDamage && customDamageFormula) {
+    const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
+    try {
+      let safeFormula = customDamageFormula.replace(/\]\s*\+\s*/g, "], ");
+      const fullFormula = customDamageType ? `(${safeFormula})[${customDamageType}]` : safeFormula;
+      dRoll = new pf2eDamageClass(fullFormula);
+      await dRoll.evaluate({ async: true });
+    } catch (e) {
+      ui.notifications.error(`AoE Easy Resolve | Invalid custom damage formula: ${customDamageFormula}`);
       return;
     }
+  } else if (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) {
+    const rollOptions = { event: event };
+    if (aoeData.castLevel) rollOptions.spellLevel = parseInt(aoeData.castLevel, 10);
 
-    if (!dRoll) return;
-    if (useCustomDamage && game.dice3d) await game.dice3d.showForRoll(dRoll, game.user, true);
-
-    const damageJSON = JSON.stringify(dRoll.toJSON());
-    const damageTotal = dRoll.total;
-    const damageFormula = dRoll.formula;
-
-    let diceStrings = [];
-    if (dRoll.dice && dRoll.dice.length > 0) {
-      dRoll.dice.forEach(d => diceStrings.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
-    }
-    const damageTooltip = diceStrings.length > 0 ? diceStrings.join(" | ") : damageFormula;
-
-    let breakdownArr = [];
-    if (dRoll.instances) {
-      dRoll.instances.forEach(i => {
-        const type = i.type || "untyped";
-        const cleanType = type.charAt(0).toUpperCase() + type.slice(1);
-        breakdownArr.push(`${i.total} ${cleanType}`);
-      });
-    }
-    const damageBreakdown = breakdownArr.length > 0 ? breakdownArr.join(", ") : damageTotal;
-
-    if (dmgMsg && typeof dmgMsg.delete === "function") {
-      try { if (game.user.isGM || dmgMsg.isAuthor) await dmgMsg.delete(); } catch(e) {}
+    const rollResult = await originItem.rollDamage(rollOptions);
+    if (!rollResult) return;
+    
+    // AGGRESSIVE V14 EXTRACTION
+    console.log("AoE Easy Resolve | Raw Damage Result:", rollResult);
+    if (rollResult.rolls?.length > 0) {
+      dRoll = rollResult.rolls[0];
+      dmgMsg = rollResult;
+    } else if (Array.isArray(rollResult) && rollResult[0]?.rolls?.length > 0) {
+      dRoll = rollResult[0].rolls[0];
+      dmgMsg = rollResult[0];
+    } else if (rollResult.total !== undefined) {
+      dRoll = rollResult;
+    } else if (rollResult._class === "DamageRoll" || rollResult.constructor.name === "DamageRoll") {
+      dRoll = rollResult;
     }
 
-    if (game.user.isGM) {
-      await message.update({
-        [`flags.${MODULE_ID}.damageJSON`]: damageJSON, [`flags.${MODULE_ID}.damageTotal`]: damageTotal,
-        [`flags.${MODULE_ID}.damageBreakdown`]: damageBreakdown, [`flags.${MODULE_ID}.damageFormula`]: damageFormula,
-        [`flags.${MODULE_ID}.damageTooltip`]: damageTooltip
-      });
+    if (!dRoll) {
+        console.error("AoE Easy Resolve | Failed to extract damage roll object!", rollResult);
+        ui.notifications.error("AoE Easy Resolve | Could not parse damage roll. Check console.");
+        return;
+    }
+  } else {
+    ui.notifications.info("AoE Easy Resolve | This item has no damage configured.");
+    return;
+  }
 
-      const freshMessage = game.messages.get(message.id);
-      const freshAoeData = freshMessage.flags[MODULE_ID];
-      const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-      const formattedSaveType = freshAoeData.saveType.charAt(0).toUpperCase() + freshAoeData.saveType.slice(1);
-      
-      const newHtmlContent = await renderHBS(templatePath, { 
-        targets: formatTargetsData(freshAoeData.targets), itemName: freshAoeData.itemName,
-        saveType: formattedSaveType, saveDC: freshAoeData.saveDC, damageTotal: damageTotal,
-        damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip, isGM: game.user.isGM
-      });
-      await freshMessage.update({ content: newHtmlContent });
-    } else {
-      await ChatMessage.create({
-        whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
-        flags: {
-          [MODULE_ID]: {
-            isSocketPayload: true,
-            payload: { action: "updateDamageRoll", messageId: message.id, damageJSON: damageJSON, damageTotal: damageTotal, damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip }
-          }
+  if (!dRoll) return;
+  if (useCustomDamage && game.dice3d) await game.dice3d.showForRoll(dRoll, game.user, true);
+
+  const damageJSON = JSON.stringify(dRoll.toJSON());
+  const damageTotal = dRoll.total;
+  const damageFormula = dRoll.formula;
+
+  let diceStrings = [];
+  if (dRoll.dice && dRoll.dice.length > 0) {
+    dRoll.dice.forEach(d => diceStrings.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
+  }
+  const damageTooltip = diceStrings.length > 0 ? diceStrings.join(" | ") : damageFormula;
+
+  let breakdownArr = [];
+  if (dRoll.instances) {
+    dRoll.instances.forEach(i => {
+      const type = i.type || "untyped";
+      const cleanType = type.charAt(0).toUpperCase() + type.slice(1);
+      breakdownArr.push(`${i.total} ${cleanType}`);
+    });
+  }
+  const damageBreakdown = breakdownArr.length > 0 ? breakdownArr.join(", ") : damageTotal;
+
+  if (dmgMsg && typeof dmgMsg.delete === "function") {
+    try { if (game.user.isGM || dmgMsg.isAuthor) await dmgMsg.delete(); } catch(e) {}
+  }
+
+  if (game.user.isGM) {
+    await message.update({
+      [`flags.${MODULE_ID}.damageJSON`]: damageJSON, [`flags.${MODULE_ID}.damageTotal`]: damageTotal,
+      [`flags.${MODULE_ID}.damageBreakdown`]: damageBreakdown, [`flags.${MODULE_ID}.damageFormula`]: damageFormula,
+      [`flags.${MODULE_ID}.damageTooltip`]: damageTooltip
+    });
+
+    const freshMessage = game.messages.get(message.id);
+    const freshAoeData = freshMessage.flags[MODULE_ID];
+    const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+    const formattedSaveType = freshAoeData.saveType.charAt(0).toUpperCase() + freshAoeData.saveType.slice(1);
+    
+    const newHtmlContent = await renderHBS(templatePath, { 
+      targets: formatTargetsData(freshAoeData.targets), itemName: freshAoeData.itemName,
+      saveType: formattedSaveType, saveDC: freshAoeData.saveDC, damageTotal: damageTotal,
+      damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip, isGM: game.user.isGM
+    });
+    await freshMessage.update({ content: newHtmlContent });
+  } else {
+    await ChatMessage.create({
+      whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
+      flags: {
+        [MODULE_ID]: {
+          isSocketPayload: true,
+          payload: { action: "updateDamageRoll", messageId: message.id, damageJSON: damageJSON, damageTotal: damageTotal, damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip }
         }
-      });
-    }
-  });
+      }
+    });
+  }
+});
 
   $html.find(".roll-all-npcs-btn").off("click").on("click", async (event) => {
     event.preventDefault();
@@ -1223,9 +1239,14 @@ if (game.user.isGM) {
     let needsDamageWarning = false;
 
     const itemHasDamage = (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || (aoeFlags.useCustomDamage && aoeFlags.customDamage) || aoeData.hazardDamage;
-    if (itemHasDamage && !aoeData.damageTotal) needsDamageWarning = true;
+    
+    // The Brick Wall: Abort the entire function if damage is required but missing
+    if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
+        return ui.notifications.warn("AoE Easy Resolve | You must roll damage before applying effects!");
+    }
 
     let msgUpdates = {};
+  
 
     for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
       const token = canvas.tokens.get(tokenId);
@@ -1246,7 +1267,6 @@ if (game.user.isGM) {
       else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
       if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) effectType = negativeHealing ? "none" : "heal";
 
-      // Enforce Split Matrix for final math
       const targetAlliance = token.actor?.alliance;
       const casterAlliance = originItem?.actor?.alliance || "party";
       const isAlly = targetAlliance === casterAlliance;
@@ -1255,14 +1275,16 @@ if (game.user.isGM) {
       if (forcedEffect === "heal") effectType = "heal";
       if (forcedEffect === "immune") effectType = "none";
 
-      if (effectType === "none") { processedCount++; msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true; continue; }
+      if (effectType === "none") { 
+          processedCount++; 
+          msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true; 
+          continue; 
+      }
 
       const isHealEffect = effectType === "heal";
       if (!targetData.hasRolled && !isHealEffect) continue;
 
       const dos = targetData.degreeOfSuccess || "failure"; 
-      processedCount++; 
-      msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true;
 
       // --- INJECT: BROADCAST FINALIZED SAVE TO COMBAT FORENSICS ---
       if (targetData.hasRolled) {
@@ -1356,9 +1378,12 @@ if (game.user.isGM) {
         }
       }
 
-      // PHASE ROUTER
       const saveContext = aoeData.isReactive ? "reactiveSave" : "save";
       await executeEffectRules([token], saveContext, dos, originItem, message.actor);
+      
+      // Mark as applied ONLY if everything successfully resolved
+      processedCount++; 
+      msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true;
     }
     
     if (Object.keys(msgUpdates).length > 0) {
