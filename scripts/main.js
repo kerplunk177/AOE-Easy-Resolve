@@ -478,7 +478,126 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
 
   if (message.isAuthor) {
     const context = message.flags?.pf2e?.context;
-    if (context && context.type === "attack-roll") {
+    if (!context) return;
+
+    // --- THE GHOST NET 1: Snatch Stray Saves ---
+    if (context.type === "saving-throw") {
+        const actor = message.actor;
+        if (actor) {
+            // Scan backward for active AoE cards (Safety: ignores cards older than 30 mins)
+            const recentAoEMsgs = game.messages.filter(m => {
+                if (Date.now() - m.timestamp > 1800000) return false; 
+                
+                const f = m.flags[MODULE_ID];
+                return f && f.targets && Object.values(f.targets).some(t => {
+                    const tok = canvas.tokens.get(t.id);
+                    // Safety: token must not have rolled AND must not have been forcefully applied/skipped by GM
+                    return tok && tok.actor?.id === actor.id && !t.hasRolled && !t.hasApplied;
+                });
+            }).sort((a, b) => b.timestamp - a.timestamp);
+
+            if (recentAoEMsgs.length > 0) {
+                const targetMessage = recentAoEMsgs[0];
+                const aoeData = targetMessage.flags[MODULE_ID];
+                
+                const targetData = Object.values(aoeData.targets).find(t => {
+                    const tok = canvas.tokens.get(t.id);
+                    return tok && tok.actor?.id === actor.id && !t.hasRolled && !t.hasApplied;
+                });
+
+                if (targetData) {
+                    const tokenId = targetData.id;
+                    const roll = message.rolls?.[0];
+                    
+                    if (roll) {
+                        let d20 = 10;
+                        const d20Term = roll.terms?.find(t => t.faces === 20);
+                        if (d20Term) d20 = d20Term.results?.[0]?.result ?? d20Term.total ?? 10;
+                        else if (roll.dice?.[0]) d20 = roll.dice[0].results?.[0]?.result ?? roll.dice[0].total ?? 10;
+                        
+                        const modifier = roll.total - d20;
+                        const saveType = context.saveType || aoeData.saveType; 
+                        const rollTooltip = buildRollTooltip(actor, saveType, roll, d20, modifier);
+                        
+                        const rawDosValue = getUnadjustedDos(roll.total, aoeData.saveDC, d20);
+                        let finalDosValue = roll.degreeOfSuccess ?? roll.options?.degreeOfSuccess ?? context.outcome;
+                        
+                        const dosMap = { 0: "criticalFailure", 1: "failure", 2: "success", 3: "criticalSuccess", "criticalFailure": "criticalFailure", "failure": "failure", "success": "success", "criticalSuccess": "criticalSuccess" };
+                        let dos = dosMap[finalDosValue] || dosMap[rawDosValue] || "success";
+                        let unadjustedDos = rawDosValue !== undefined ? dosMap[rawDosValue] : dos;
+
+                        // Burn the stray message so chat stays clean
+                        setTimeout(async () => { try { await message.delete(); } catch(e){} }, 100);
+
+                        // Fire the data payload back into the UI logic
+                        await ChatMessage.create({
+                            whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload (Ghost Net)",
+                            flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: targetMessage.id, tokenId: tokenId, rollTotal: roll.total, rollFormula: roll.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos, hasUsedHeroPoint: false, hasCover: false } } }
+                        });
+                        
+                        ui.notifications.info(`AoE Easy Resolve | Intercepted save for ${actor.name}.`);
+                        return; // Halt further processing
+                    }
+                }
+            }
+        }
+    }
+
+    // --- THE GHOST NET 2: Snatch Stray Damage Rolls ---
+    if (context.type === "damage-roll") {
+        const itemUuid = message.item?.uuid || message.flags?.pf2e?.origin?.uuid;
+        if (itemUuid) {
+            // Find recent AoE cards (Safety: ignores cards older than 30 mins)
+            const recentAoEMsgs = game.messages.filter(m => {
+                if (Date.now() - m.timestamp > 1800000) return false; 
+                
+                const f = m.flags[MODULE_ID];
+                return f && f.itemUuid === itemUuid && (f.damageTotal === undefined || f.damageTotal === null);
+            }).sort((a, b) => b.timestamp - a.timestamp);
+
+            if (recentAoEMsgs.length > 0) {
+                const targetMessage = recentAoEMsgs[0];
+                const dRoll = message.rolls?.[0];
+                
+                if (dRoll) {
+                    const damageJSON = JSON.stringify(dRoll.toJSON());
+                    const damageTotal = dRoll.total;
+                    const damageFormula = dRoll.formula;
+
+                    let diceStrings = [];
+                    if (dRoll.dice && dRoll.dice.length > 0) {
+                        dRoll.dice.forEach(d => diceStrings.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
+                    }
+                    const damageTooltip = diceStrings.length > 0 ? diceStrings.join(" | ") : damageFormula;
+
+                    let breakdownArr = [];
+                    if (dRoll.instances) {
+                        dRoll.instances.forEach(i => {
+                            const type = i.type || "untyped";
+                            const cleanType = type.charAt(0).toUpperCase() + type.slice(1);
+                            breakdownArr.push(`${i.total} ${cleanType}`);
+                        });
+                    }
+                    const damageBreakdown = breakdownArr.length > 0 ? breakdownArr.join(", ") : damageTotal;
+
+                    // Burn the stray message
+                    setTimeout(async () => { try { await message.delete(); } catch(e){} }, 100);
+
+                    // Fire the data payload
+                    await ChatMessage.create({
+                        whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload (Ghost Net)",
+                        flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateDamageRoll", messageId: targetMessage.id, damageJSON: damageJSON, damageTotal: damageTotal, damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip } } }
+                    });
+                    
+                    ui.notifications.info(`AoE Easy Resolve | Intercepted damage roll for ${message.item?.name || "spell"}.`);
+                    return; // Halt further processing
+                }
+            }
+        }
+    }
+
+    // --- ORIGINAL ATTACK ROUTER ---
+    if (context.type === "attack-roll") {
       const outcome = context.outcome; 
       if (!outcome) return;
 
@@ -490,7 +609,6 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
     }
   }
 });
-
 // --- CHAT CARD INTERACTIVITY ---
 Hooks.on("renderChatMessageHTML", (message, html, data) => {
   const item = message.item;
