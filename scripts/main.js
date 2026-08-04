@@ -48,6 +48,86 @@ Hooks.once("setup", () => {
   };
 });
 
+
+// --- THE COMBAT RECEIPT MUGGER ---
+Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
+  // 1. Intercepting the "Roll Damage" card aggressively
+  if (window.aoeEasyResolveRollingDamage && message.isAuthor) {
+      if (message.rolls?.length > 0 || (message.flags?.pf2e?.context?.type || "").includes("damage")) {
+          window.aoeEasyResolveDamageRollData = {
+              rolls: message.rolls,
+              flags: message.flags
+          };
+          return false; // Burn the native damage card
+      }
+  }
+
+  // 2. Intercepting the "Apply Damage" cards
+  if (window.aoeEasyResolveApplying?.isApplying && message.isAuthor) {
+      const context = message.flags?.pf2e?.context;
+      if (context && context.type === "damage-taken") {
+          const tokenId = message.speaker?.token;
+          const token = canvas.tokens.get(tokenId);
+          
+          let pf2eIWR = [];
+          const fullHtml = (message.flavor || "") + " " + (message.content || "");
+          let decodedHtml = fullHtml.replace(/&quot;/g, '"');
+          
+          // The Skeleton Key: Extract any JSON object containing IWR data, completely ignoring key names
+          const jsonMatches = decodedHtml.match(/\{[^{}]*(?:resist|weak|immun)[^{}]*\}/gi);
+          if (jsonMatches) {
+              jsonMatches.forEach(obj => {
+                  // Grab any string mapped to category, type, or damageType
+                  let strVals = [...obj.matchAll(/"(?:category|type|damageType)"\s*:\s*"([^"]+)"/gi)].map(m => m[1]);
+                  
+                  // The Net: Catch adjustment, value, amount, ignored, reduced, or magnitude, even if wrapped in quotes
+                  let numVal = obj.match(/"(?:adjustment|value|amount|ignored|reduced|magnitude)"\s*:\s*"?(\d+)"?/i)?.[1] || "";
+                  
+                  if (strVals.length > 0) {
+                      let uniqueVals = [...new Set(strVals.map(s => s.toLowerCase()))];
+                      let iwrKeyword = uniqueVals.find(v => /resist|weak|immun/i.test(v)) || "";
+                      let otherWords = uniqueVals.filter(v => v !== iwrKeyword);
+                      
+                      if (iwrKeyword) {
+                          let finalStr = iwrKeyword.charAt(0).toUpperCase() + iwrKeyword.slice(1);
+                          if (otherWords.length > 0) finalStr += ": " + otherWords.join(", ");
+                          if (numVal) finalStr += ` (${numVal})`;
+                          pf2eIWR.push(finalStr);
+                      }
+                  }
+              });
+          }
+
+          // Fallback just in case they drop JSON entirely and print standard text
+          if (pf2eIWR.length === 0) {
+              let safeHtml = decodedHtml.replace(/\[\{.*?\}\]/g, ""); // Nuke unparsed JSON arrays
+              safeHtml = safeHtml.replace(/<[^>]*>/g, " ").replace(/\s\s+/g, " "); // Flatten HTML
+              
+              const textRegex = /\b(?:Resistance|Weakness|Immunity)\s*(?:\d+)?\s*(?:\([^)]+\))?/gi;
+              let textMatches = safeHtml.match(textRegex);
+              if (textMatches) {
+                  textMatches.forEach(m => {
+                      let cleanNote = m.trim();
+                      cleanNote = cleanNote.charAt(0).toUpperCase() + cleanNote.slice(1);
+                      if (!pf2eIWR.includes(cleanNote)) pf2eIWR.push(cleanNote);
+                  });
+              }
+          }
+
+          window.aoeEasyResolveApplying.receipt.push({
+              tokenId: tokenId,
+              speaker: message.speaker,
+              img: token ? token.document.texture.src : "icons/svg/mystery-man.svg",
+              flavor: message.flavor,
+              content: message.content,
+              saveNote: window.aoeEasyResolveApplying.activeSaveNote || "",
+              iwr: [...new Set(pf2eIWR)] 
+          });
+          return false; 
+      }
+  }
+});
+
 // --- COMBAT TRACKER: HAZARD DURATION CLEANUP ---
 Hooks.on("updateCombat", async (combat, change, options, userId) => {
     if (!game.user.isGM) return;
@@ -366,6 +446,7 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
 const renderData = {
   ignoreAoE: flags.ignoreAoE || false,
   enableMultiTarget: flags.enableMultiTarget || false,
+  isAreaDamage: flags.isAreaDamage || false,
   useOverride: flags.useOverride || false,
   provideTemplate: flags.provideTemplate || false,
   isCone: flags.templateType === "cone" || !flags.templateType,
@@ -564,11 +645,35 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
                     const damageTotal = dRoll.total;
                     const damageFormula = dRoll.formula;
 
-                    let diceStrings = [];
-                    if (dRoll.dice && dRoll.dice.length > 0) {
-                        dRoll.dice.forEach(d => diceStrings.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
+                    let tooltipParts = [];
+                    if (dRoll.instances) {
+                        dRoll.instances.forEach(inst => {
+                            let type = inst.type ? inst.type.charAt(0).toUpperCase() + inst.type.slice(1) : "Untyped";
+                            let formula = inst.formula || inst.head?.expression || "";
+                            let diceRolls = [];
+                            inst.dice?.forEach(d => {
+                                diceRolls.push(`[${d.results.map(r => r.result).join(",")}]`);
+                            });
+                            let diceStr = diceRolls.length > 0 ? ` (Rolls: ${diceRolls.join(", ")})` : "";
+                            tooltipParts.push(`<strong>${type}</strong>: ${formula}${diceStr}`);
+                        });
+                    } else if (dRoll.dice) {
+                        dRoll.dice.forEach(d => tooltipParts.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
                     }
-                    const damageTooltip = diceStrings.length > 0 ? diceStrings.join(" | ") : damageFormula;
+                  
+                    // The Modifier Heist: Steal flat damage bonuses from the native PF2e card before deletion
+                    if (dmgMsg && dmgMsg.flags?.pf2e?.modifiers) {
+                        const mods = dmgMsg.flags.pf2e.modifiers.filter(m => m.enabled && !m.ignored);
+                        if (mods.length > 0) {
+                            tooltipParts.push(`<hr style="margin: 3px 0; border-color: #777;">`);
+                            mods.forEach(m => {
+                                let sign = m.modifier >= 0 ? "+" : "";
+                                tooltipParts.push(`<span style="color: #4ade80;">${m.label}</span>: ${sign}${m.modifier} ${m.type || ""}`);
+                            });
+                        }
+                    }
+                    
+                    const damageTooltip = tooltipParts.length > 0 ? tooltipParts.join("<br>") : damageFormula;
 
                     let breakdownArr = [];
                     if (dRoll.instances) {
@@ -815,10 +920,10 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
     if (!message.isAuthor) $html.find(".roll-damage-btn").hide();
   }
 
-  // 2. STATE-AWARE GM BEACONS (Damage & Apply)
-  if (isGM) {
-    (async () => {
-      let originItem = item;
+// 2. STATE-AWARE GM BEACONS (Damage & Apply)
+if (isGM || message.isAuthor) {
+  (async () => {
+    let originItem = item;
       
       // The Fix: Check the origin message FIRST to grab the item directly from memory
       if (!originItem && aoeData.originMessageId) {
@@ -875,7 +980,7 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
   const customDamageType = aoeFlags.customDamageType;
 
   let dRoll = null;
-  let dmgMsg = null;
+  let rollFlags = null;
 
   if (useCustomDamage && customDamageFormula) {
     const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
@@ -883,35 +988,34 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
       let safeFormula = customDamageFormula.replace(/\]\s*\+\s*/g, "], ");
       const fullFormula = customDamageType ? `(${safeFormula})[${customDamageType}]` : safeFormula;
       dRoll = new pf2eDamageClass(fullFormula);
-      await dRoll.evaluate({ async: true });
+      await dRoll.evaluate();
     } catch (e) {
       ui.notifications.error(`AoE Easy Resolve | Invalid custom damage formula: ${customDamageFormula}`);
       return;
     }
   } else if (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) {
+    
+    // TURN ON THE DAMAGE MUGGER
+    window.aoeEasyResolveRollingDamage = true;
+    window.aoeEasyResolveDamageRollData = null;
+
     const rollOptions = { event: event };
     if (aoeData.castLevel) rollOptions.spellLevel = parseInt(aoeData.castLevel, 10);
 
-    const rollResult = await originItem.rollDamage(rollOptions);
-    if (!rollResult) return;
+    await originItem.rollDamage(rollOptions);
     
-    // AGGRESSIVE V14 EXTRACTION
-    console.log("AoE Easy Resolve | Raw Damage Result:", rollResult);
-    if (rollResult.rolls?.length > 0) {
-      dRoll = rollResult.rolls[0];
-      dmgMsg = rollResult;
-    } else if (Array.isArray(rollResult) && rollResult[0]?.rolls?.length > 0) {
-      dRoll = rollResult[0].rolls[0];
-      dmgMsg = rollResult[0];
-    } else if (rollResult.total !== undefined) {
-      dRoll = rollResult;
-    } else if (rollResult._class === "DamageRoll" || rollResult.constructor.name === "DamageRoll") {
-      dRoll = rollResult;
+    // Micro-pause to let the database intercept fire
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    if (window.aoeEasyResolveDamageRollData && window.aoeEasyResolveDamageRollData.rolls?.length > 0) {
+        dRoll = window.aoeEasyResolveDamageRollData.rolls[0];
+        rollFlags = window.aoeEasyResolveDamageRollData.flags;
     }
+    
+    window.aoeEasyResolveRollingDamage = false;
 
     if (!dRoll) {
-        console.error("AoE Easy Resolve | Failed to extract damage roll object!", rollResult);
-        ui.notifications.error("AoE Easy Resolve | Could not parse damage roll. Check console.");
+        ui.notifications.error("AoE Easy Resolve | Could not intercept damage roll.");
         return;
     }
   } else {
@@ -919,18 +1023,41 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
     return;
   }
 
-  if (!dRoll) return;
-  if (useCustomDamage && game.dice3d) await game.dice3d.showForRoll(dRoll, game.user, true);
+  if (game.dice3d && dRoll) await game.dice3d.showForRoll(dRoll, game.user, true);
 
   const damageJSON = JSON.stringify(dRoll.toJSON());
   const damageTotal = dRoll.total;
   const damageFormula = dRoll.formula;
 
-  let diceStrings = [];
-  if (dRoll.dice && dRoll.dice.length > 0) {
-    dRoll.dice.forEach(d => diceStrings.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
+  let tooltipParts = [];
+  if (dRoll.instances) {
+      dRoll.instances.forEach(inst => {
+          let type = inst.type ? inst.type.charAt(0).toUpperCase() + inst.type.slice(1) : "Untyped";
+          let formula = inst.formula || inst.head?.expression || "";
+          let diceRolls = [];
+          inst.dice?.forEach(d => {
+              diceRolls.push(`[${d.results.map(r => r.result).join(",")}]`);
+          });
+          let diceStr = diceRolls.length > 0 ? ` (Rolls: ${diceRolls.join(", ")})` : "";
+          tooltipParts.push(`<strong>${type}</strong>: ${formula}${diceStr}`);
+      });
+  } else if (dRoll.dice) {
+      dRoll.dice.forEach(d => tooltipParts.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
   }
-  const damageTooltip = diceStrings.length > 0 ? diceStrings.join(" | ") : damageFormula;
+
+  // Append Flat Modifiers to Tooltip (e.g., Sorcerer Potency)
+  if (rollFlags && rollFlags.pf2e?.modifiers) {
+      const mods = rollFlags.pf2e.modifiers.filter(m => m.enabled && !m.ignored);
+      if (mods.length > 0) {
+          tooltipParts.push(`<hr style="margin: 3px 0; border-color: #777;">`);
+          mods.forEach(m => {
+              let sign = m.modifier >= 0 ? "+" : "";
+              tooltipParts.push(`<span style="color: #4ade80;">${m.label}</span>: ${sign}${m.modifier} ${m.type || ""}`);
+          });
+      }
+  }
+  
+  const damageTooltip = tooltipParts.length > 0 ? tooltipParts.join("<br>") : damageFormula;
 
   let breakdownArr = [];
   if (dRoll.instances) {
@@ -941,10 +1068,6 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
     });
   }
   const damageBreakdown = breakdownArr.length > 0 ? breakdownArr.join(", ") : damageTotal;
-
-  if (dmgMsg && typeof dmgMsg.delete === "function") {
-    try { if (game.user.isGM || dmgMsg.isAuthor) await dmgMsg.delete(); } catch(e) {}
-  }
 
   if (game.user.isGM) {
     await message.update({
@@ -1354,46 +1477,54 @@ if (game.user.isGM) {
     const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
     const itemMultipliers = aoeFlags.multipliers || {};
     let processedCount = 0;
-    let needsDamageWarning = false;
 
     const itemHasDamage = (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || (aoeFlags.useCustomDamage && aoeFlags.customDamage) || aoeData.hazardDamage;
     
-    // The Brick Wall: Abort the entire function if damage is required but missing
     if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
         return ui.notifications.warn("AoE Easy Resolve | You must roll damage before applying effects!");
     }
 
     let msgUpdates = {};
-  
+    window.aoeEasyResolveApplying = { isApplying: true, receipt: [] };
 
-    for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
-      const token = canvas.tokens.get(tokenId);
-      if (!token || !token.actor) continue;
-      if (targetData.hasApplied) continue; 
+    try {
+      for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
+        const token = canvas.tokens.get(tokenId);
+        if (!token || !token.actor) continue;
+        if (targetData.hasApplied) continue; 
 
-      const negativeHealing = token.actor.system.attributes.hp?.negativeHealing || false;
-      const itemTraits = originItem?.system?.traits?.value || [];
-      const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
-      const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
-      const isHealingTrait = itemTraits.includes("healing");
+        window.aoeEasyResolveApplying.activeSaveNote = ""; 
 
-      let effectType = "standard";
-      let overrideType = null;
+        const negativeHealing = token.actor.system.attributes.hp?.negativeHealing || false;
+        const itemTraits = originItem?.system?.traits?.value || [];
+        const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
+        const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
+        const isHealingTrait = itemTraits.includes("healing");
 
-      if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
-      else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
-      else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
-      if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) effectType = negativeHealing ? "none" : "heal";
+        let effectType = "standard";
+        let overrideType = null;
 
-      const targetAlliance = token.actor?.alliance;
-      const casterAlliance = originItem?.actor?.alliance || "party";
-      const isAlly = targetAlliance === casterAlliance;
-      const forcedEffect = isAlly ? aoeFlags.allyBaseEffect : aoeFlags.enemyBaseEffect;
-      
-      if (forcedEffect === "heal") effectType = "heal";
-      if (forcedEffect === "immune") effectType = "none";
+        if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
+        else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
+        else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
+        if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) effectType = negativeHealing ? "none" : "heal";
 
-      if (effectType === "none") { 
+        const targetAlliance = token.actor?.alliance;
+        const casterAlliance = originItem?.actor?.alliance || "party";
+        const isAlly = targetAlliance === casterAlliance;
+        const forcedEffect = isAlly ? aoeFlags.allyBaseEffect : aoeFlags.enemyBaseEffect;
+        
+        if (forcedEffect === "heal") effectType = "heal";
+        if (forcedEffect === "immune") effectType = "none";
+
+        if (effectType === "none") { 
+          window.aoeEasyResolveApplying.receipt.push({
+              tokenId: tokenId,
+              speaker: { alias: token.name },
+              img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
+              content: `<span style="font-weight: bold; color: #888;">Immune. Takes no damage.</span>`,
+              saveNote: "Target is Immune"
+          });
           processedCount++; 
           msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true; 
           continue; 
@@ -1404,17 +1535,11 @@ if (game.user.isGM) {
 
       const dos = targetData.degreeOfSuccess || "failure"; 
 
-      // --- INJECT: BROADCAST FINALIZED SAVE TO COMBAT FORENSICS ---
       if (targetData.hasRolled) {
-          Hooks.callAll('holodeckAoeSave', {
-              targetDoc: token.actor,
-              targetName: token.name,
-              outcome: dos
-          });
+          Hooks.callAll('holodeckAoeSave', { targetDoc: token.actor, targetName: token.name, outcome: dos });
       }
-      // ------------------------------------------------------------
 
-      if (aoeData.damageTotal) {
+      if (aoeData.damageTotal !== undefined && aoeData.damageTotal !== null) {
         let multiplier = 0;
         if (isHealEffect) {
           multiplier = 1; 
@@ -1435,6 +1560,11 @@ if (game.user.isGM) {
           }
         }
 
+        if (!isHealEffect) {
+            const dosMap = { "criticalSuccess": "Crit Success", "success": "Success", "failure": "Failure", "criticalFailure": "Crit Failure" };
+            window.aoeEasyResolveApplying.activeSaveNote = `Save Mitigation: ${dosMap[dos] || dos} (x${multiplier})`;
+        }
+
         if (multiplier > 0) {
           if (isHealEffect) {
             const healAmount = aoeData.damageTotal;
@@ -1449,17 +1579,14 @@ if (game.user.isGM) {
               canvas.interface.createScrollingText(token.center, `+${actualHealed}`, { anchor: CONST.TEXT_ANCHOR_POINTS.TOP, fill: 0x4ade80, direction: CONST.TEXT_ANCHOR_POINTS.UP });
             }
             
-            await ChatMessage.create({
-              speaker: ChatMessage.getSpeaker({ actor: token.actor, token: token.document }),
-              flavor: `<span class="pf2e-damage-taken"><strong>${originItem ? originItem.name : "Healing"}</strong> (Recovery)</span>`,
-              content: `<div class="dice-roll"><div class="dice-result"><div class="dice-total" style="color: #1e8b42; background: rgba(74, 222, 128, 0.1);"><strong>${token.name}</strong> recovered ${actualHealed} HP</div></div></div>`,
-              flags: {
-                  pf2e: {
-                      context: { type: "damage-taken" },
-                      appliedDamage: { isHealing: true, uuid: token.actor.uuid, updates: [{ path: "system.attributes.hp.value", value: newHP }] }
-                  }
-              }
+            window.aoeEasyResolveApplying.receipt.push({
+                tokenId: tokenId,
+                speaker: { alias: token.name },
+                img: token.document.texture.src,
+                content: `<span style="color: #4ade80; font-weight: bold; text-shadow: 1px 1px 2px black;">Recovered ${actualHealed} HP</span>`,
+                saveNote: "Healing Applied"
             });
+
           } else {
             let damageToApply = Math.floor(aoeData.damageTotal * multiplier);
             if (pf2eDamageRoll) {
@@ -1474,15 +1601,22 @@ if (game.user.isGM) {
                 }
                 if (formulaParts.length > 0) {
                   const newRoll = new pf2eDamageClass(formulaParts.join(", "));
-                  await newRoll.evaluate({ async: true });
+                  await newRoll.evaluate();
                   damageToApply = newRoll;
                 }
               } catch (e) { console.warn("AoE Easy Resolve | Failed to rebuild scaled DamageRoll.", e); }
             }
 
+            let extraTraits = new Set();
+            if (aoeData.templateId || aoeFlags.isAreaDamage) {
+                extraTraits.add("area-damage"); 
+                extraTraits.add("area-effect"); 
+            }
+            if (itemHasDamage) extraTraits.add("damaging-effect");
+
             try {
               if (token.actor.applyDamage) {
-                await token.actor.applyDamage({ damage: damageToApply, token: token.document, item: originItem });
+                await token.actor.applyDamage({ damage: damageToApply, token: token.document, item: originItem, rollOptions: extraTraits });
               } else { throw new Error("PF2e applyDamage API not found on actor."); }
             } catch (error) {
               console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP manipulation.`, error);
@@ -1493,15 +1627,111 @@ if (game.user.isGM) {
               } catch (fallbackError) { console.error(`AoE Easy Resolve | Raw HP fallback failed for ${token.name}`, fallbackError); }
             }
           }
+        } else {
+          // The Zero Damage Safety Net
+          window.aoeEasyResolveApplying.receipt.push({
+              tokenId: tokenId,
+              speaker: { alias: token.name },
+              img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
+              content: `<span style="font-weight: bold; color: #888;">Takes no damage.</span>`,
+              saveNote: window.aoeEasyResolveApplying.activeSaveNote || "Complete Mitigation"
+          });
         }
       }
 
-      const saveContext = aoeData.isReactive ? "reactiveSave" : "save";
-      await executeEffectRules([token], saveContext, dos, originItem, message.actor);
-      
-      // Mark as applied ONLY if everything successfully resolved
-      processedCount++; 
-      msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true;
+        const saveContext = aoeData.isReactive ? "reactiveSave" : "save";
+        await executeEffectRules([token], saveContext, dos, originItem, message.actor);
+        
+        processedCount++; 
+        msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true;
+      }
+    } finally {
+      const receiptList = window.aoeEasyResolveApplying.receipt;
+      window.aoeEasyResolveApplying = null;
+
+      if (receiptList.length > 0) {
+          const title = originItem ? originItem.name : "Effect Resolution";
+          const totalDmg = aoeData.damageTotal;
+          const dmgBreakdown = aoeData.damageBreakdown;
+          
+          let headerExtra = "";
+          if (totalDmg !== undefined && totalDmg !== null) {
+              const baseTooltip = (aoeData.damageTooltip || "Base Damage Roll").replace(/"/g, '&quot;');
+              headerExtra = `<div data-tooltip="${baseTooltip}" data-tooltip-direction="UP" style="margin-top: 4px; font-size: 1.1em; color: #ff6b6b; font-weight: bold; text-shadow: 1px 1px 2px black; cursor: help;">Base Roll: ${dmgBreakdown || totalDmg} <i class="fas fa-info-circle" style="font-size: 0.8em; color: #7a7971;"></i></div>`;
+          }
+          
+          let receiptHtml = `<div class="aoe-easy-resolve-card">
+              <header style="text-align: center; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 5px;">
+                  <h2 style="margin: 0; font-size: 1.5em;">${title}</h2>
+                  <div style="font-weight: bold; font-size: 1em; color: #888;">Resolution Summary</div>
+                  ${headerExtra}
+              </header>
+              <div class="targets-section" style="display: flex; flex-direction: column; gap: 4px;">`;
+
+          for (let entry of receiptList) {
+              const tokenName = entry.speaker?.alias || "Target";
+              const tokenImg = entry.img || "icons/svg/mystery-man.svg";
+              
+              const targetData = aoeData.targets[entry.tokenId];
+              let rowBg = "rgba(0, 0, 0, 0.2)"; 
+              
+              if (targetData) {
+                  if (targetData.isHealing) {
+                      rowBg = "rgba(46, 204, 113, 0.15)"; 
+                  } else {
+                      const dos = targetData.degreeOfSuccess;
+                      if (dos === "criticalSuccess") rowBg = "rgba(212, 175, 55, 0.15)";
+                      else if (dos === "success") rowBg = "rgba(52, 152, 219, 0.15)"; 
+                      else if (dos === "failure") rowBg =  "rgba(0, 0, 0, 0.4)"; 
+                      else if (dos === "criticalFailure") rowBg = "rgba(231, 76, 60, 0.15)";
+                  }
+              }
+
+              let forensicTooltip = `<strong>Base Roll:</strong> ${totalDmg}`;
+              if (entry.saveNote) forensicTooltip += `<br><strong>${entry.saveNote}</strong>`;
+
+              if (entry.iwr && entry.iwr.length > 0) {
+                  entry.iwr.forEach(note => {
+                      forensicTooltip += `<br><span style='color:#ff6b6b'>IWR:</span> ${note}`;
+                  });
+              }
+
+              // The Ward: Escape all quotes so the HTML DOM doesn't shatter
+              const safeTooltip = forensicTooltip.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+              let cleanContent = (entry.flavor || "") + " " + (entry.content || "");
+              
+              cleanContent = cleanContent.replace(/<span class="transparent">.*?<\/span>/gi, "");
+              cleanContent = cleanContent.replace(/<span class="statement">.*?<\/span>/gi, "");
+              
+              const escapedName = tokenName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              cleanContent = cleanContent.replace(new RegExp(escapedName, "i"), "");
+              cleanContent = cleanContent.replace(/<(strong|b|span|div)[^>]*>\s*<\/\1>/gi, "");
+              cleanContent = cleanContent.replace(/^(<[^>]+>|\s)*('s)?\s*takes\s+/i, "$1");
+              cleanContent = cleanContent.replace(/(>|^)\s*([a-z])/i, (match, p1, p2) => p1 + p2.toUpperCase());
+
+              const finalContent = `<div style="display: flex; align-items: center; gap: 4px; justify-content: flex-end; width: 100%;">
+                  ${cleanContent} 
+                  <i class="fas fa-info-circle" data-tooltip="${safeTooltip}" data-tooltip-direction="LEFT" style="color: #7a7971; font-size: 0.9em; cursor: help; margin-left: 4px; padding: 4px;"></i>
+              </div>`;
+
+              receiptHtml += `<div class="target-row" style="display: flex; align-items: center; justify-content: space-between; background: ${rowBg}; padding: 4px 6px; border-radius: 4px;">
+                  <div style="display: flex; align-items: center; gap: 8px; width: 45%; flex-shrink: 0; padding-right: 6px; border-right: 1px solid rgba(255,255,255,0.1);">
+                      <img src="${tokenImg}" width="28" height="28" style="border: none; border-radius: 4px; flex-shrink: 0; object-fit: cover; background: rgba(0,0,0,0.3);" />
+                      <span style="font-weight: bold; line-height: 1.1; word-wrap: break-word;" title="${tokenName}">${tokenName}</span>
+                  </div>
+                  <div class="receipt-content-wrapper" style="font-size: 0.95em; line-height: 1.2; flex: 1; text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-left: 6px;">
+                      ${finalContent}
+                  </div>
+              </div>`;
+          }
+          receiptHtml += `</div></div>`;
+
+          await ChatMessage.create({
+              speaker: ChatMessage.getSpeaker(),
+              content: receiptHtml
+          });
+      }
     }
     
     if (Object.keys(msgUpdates).length > 0) {
@@ -1509,31 +1739,33 @@ if (game.user.isGM) {
     }
 
     if (processedCount > 0) {
-      if (needsDamageWarning) ui.notifications.warn("AoE Easy Resolve | Processed saves, but you forgot to click 'Roll Damage' first!");
-      else ui.notifications.info(`AoE Easy Resolve | Processed damage and effects for ${processedCount} targets.`);
+      ui.notifications.info(`AoE Easy Resolve | Processed damage and effects for ${processedCount} targets.`);
     } else {
       ui.notifications.warn("AoE Easy Resolve | All valid targets have already been processed.");
     }
 
     if (game.user.isGM && aoeData.templateId) {
       const regionDoc = canvas.scene.regions?.get(aoeData.templateId);
-
       if (regionDoc) {
-        new Dialog({
-          title: `Remove Region?`, content: `<p>Do you want to remove the effect region from the canvas?</p>`,
-          buttons: {
-            yes: {
-              icon: '<i class="fas fa-trash"></i>', label: "Yes",
-              callback: async () => { 
-                try { 
-                  await regionDoc.delete(); 
-                  ui.notifications.info(`AoE Easy Resolve | Region removed.`); 
-                } catch(e) { console.error(e); } 
-              }
-            },
-            no: { icon: '<i class="fas fa-times"></i>', label: "No" }
-          }, default: "yes"
-        }).render(true);
+        const deleteCb = async () => { 
+          try { await regionDoc.delete(); ui.notifications.info(`AoE Easy Resolve | Region removed.`); } catch(e) { console.error(e); } 
+        };
+
+        if (foundry.applications?.api?.DialogV2) {
+           foundry.applications.api.DialogV2.confirm({
+               window: { title: "Remove Region?" },
+               content: "<p>Do you want to remove the effect region from the canvas?</p>",
+               yes: { callback: deleteCb }
+           });
+        } else {
+           new Dialog({
+             title: `Remove Region?`, content: `<p>Do you want to remove the effect region from the canvas?</p>`,
+             buttons: {
+               yes: { icon: '<i class="fas fa-trash"></i>', label: "Yes", callback: deleteCb },
+               no: { icon: '<i class="fas fa-times"></i>', label: "No" }
+             }, default: "yes"
+           }).render(true);
+        }
       }
     }
   });
@@ -1994,18 +2226,60 @@ async function generateTemplateCard(doc, cfg) {
   }
 }
 
+// --- TEMPLATE CONVERSION ENGINE TRIGGER ---
 const executeShapeProcessing = async (doc) => {
   setTimeout(async () => {
     try {
-      const cache = window.aoeEasyResolveCache;
+      let cache = window.aoeEasyResolveCache;
       window.aoeEasyResolveCache = null; 
+
+      // THE SMART FALLBACK: Scrape the native PF2e database flags if UI cache missed
+      if (!cache && doc.flags?.pf2e?.origin?.uuid) {
+          const originItem = await fromUuid(doc.flags.pf2e.origin.uuid);
+          if (originItem) {
+              const aoeFlags = originItem.flags?.[MODULE_ID] || {};
+              let finalDC = aoeFlags.useOverride ? aoeFlags.saveDC : (originItem.system?.defense?.save?.dc?.value || null);
+              let finalType = aoeFlags.useOverride ? aoeFlags.saveType : (originItem.system?.defense?.save?.statistic || "reflex");
+              
+              cache = {
+                  item: originItem,
+                  name: originItem.name,
+                  dc: finalDC,
+                  type: finalType,
+                  hazardDuration: aoeFlags.hazardDuration || null,
+                  castLevel: doc.flags?.pf2e?.origin?.castLevel || originItem.system?.level?.value || 1
+              };
+          }
+      }
 
       if (!cache) return; 
 
       const originItem = cache.item;
-      if (originItem && originItem.getFlag && originItem.getFlag(MODULE_ID, "ignoreAoE")) return;
+      if (originItem) {
+        if (originItem.getFlag(MODULE_ID, "ignoreAoE")) return;
 
-      let saveType = cache.type;
+        // THE FIREWALL: Did you configure this, OR is it a native combat spell?
+        const aoeFlags = originItem.flags?.[MODULE_ID] || {};
+        const hasNativeSave = !!(originItem.system?.defense?.save?.statistic);
+        const hasNativeDamage = !!(originItem.system?.damage && Object.keys(originItem.system.damage).length > 0);
+        
+        const isConfigured = aoeFlags.useOverride || 
+                             aoeFlags.useCustomDamage || 
+                             aoeFlags.provideTemplate || 
+                             (aoeFlags.rules && Object.keys(aoeFlags.rules).length > 0) || 
+                             aoeFlags.enableMultiTarget ||
+                             aoeFlags.isAreaDamage ||
+                             hasNativeSave ||
+                             hasNativeDamage;
+
+        // If the spell is completely naked (no custom config, no native save, no native damage), abort the hijack.
+        if (!isConfigured) {
+            console.log("AoE Easy Resolve | Spell is an unconfigured utility. Ignoring template.");
+            return;
+        }
+    }
+
+      let saveType = cache.type || "reflex"; 
       let saveDC = cache.dc;
       let isBasicSave = true;
 
@@ -2026,7 +2300,8 @@ const executeShapeProcessing = async (doc) => {
         originItem: originItem, 
         hazardDamage: cache.hazardDamage || null,
         hazardDuration: cache.hazardDuration || null,
-        originMessageId: cache.originMessageId
+        originMessageId: cache.originMessageId,
+        castLevel: cache.castLevel || 1
       });
 
       if (canvas.activeLayer.name !== "TokenLayer") canvas.tokens.activate();
@@ -2036,7 +2311,6 @@ const executeShapeProcessing = async (doc) => {
     }
   }, 150);
 };
-
 Hooks.on("createRegion", (doc, options, userId) => {
   if (game.user.id === userId) executeShapeProcessing(doc);
 });
