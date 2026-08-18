@@ -169,7 +169,7 @@ function getUnadjustedDos(total, dc, d20) {
 function buildRollTooltip(actor, saveType, rollResult, d20, modifier) {
   const modSign = modifier >= 0 ? "+" : "-";
   let fallback = `(${d20} ${modSign} ${Math.abs(modifier)})`;
-  
+  // Fucking Microsoft Edge
   try {
     let rawMods = actor?.saves?.[saveType]?.modifiers || [];
     
@@ -1510,17 +1510,36 @@ if (game.user.isGM) {
             window.aoeEasyResolveApplying.activeSaveNote = ""; 
 
             const negativeHealing = token.actor.system.attributes.hp?.negativeHealing || false;
-            const itemTraits = originItem?.system?.traits?.value || [];
-            const isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
-            const isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
-            const isHealingTrait = itemTraits.includes("healing");
+    const itemTraits = originItem?.system?.traits?.value || [];
+    let isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
+    let isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
+    const isHealingTrait = itemTraits.includes("healing");
 
-            let effectType = "standard";
-            let overrideType = null;
+    // Specific case for Necrotic Bomb per-target toggles
+    if (originItem?.name === "Necrotic Bomb") {
+        const targetType = message.getFlag("necromancer-thrall-helper", `dmgType_${tokenId}`) || "void";
+        isVitality = (targetType === "vitality");
+        isVoid = (targetType === "void");
+    }
 
-            if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
-            else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
-            else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
+    let effectType = "standard";
+    let overrideType = null;
+
+    if (originItem?.name === "Necrotic Bomb") {
+        // Necrotic Bomb is a damage bomb, so vitality harms undead and void harms the living. 
+        // Neither energy type converts to random healing for unaffected biology.
+        if (isVitality) {
+            effectType = negativeHealing ? "damage" : "none";
+            overrideType = "vitality";
+        } else if (isVoid) {
+            effectType = negativeHealing ? "none" : "damage";
+            overrideType = "void";
+        }
+    } else {
+        if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
+        else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
+        else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
+    }
             if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) effectType = negativeHealing ? "none" : "heal";
 
             const targetAlliance = token.actor?.alliance;
