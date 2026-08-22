@@ -18,6 +18,7 @@ Hooks.once("setup", () => {
   const module = game.modules.get(MODULE_ID);
   
   module.api = {
+   
     handleRegionEvent: async (regionEvent, originItemUuid) => {
       const token = regionEvent.data?.token || regionEvent.token;
       if (!token || !token.actor) return;
@@ -724,7 +725,14 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
   const isTactical = flags.tacticalDrawing || false;
   
   const $html = html instanceof jQuery ? html : $(html);
-
+// Drop this right at the top of your renderChatMessageHTML hook in aoe-easy-resolve
+$html.find('[data-token-id]').each((i, el) => {
+  const $row = $(el);
+  const tokenId = $row.attr('data-token-id');
+  if (tokenId) {
+      Hooks.callAll("aoeEasyResolve.renderRow", message, $row, tokenId);
+  }
+});
   if (item && !isRollCard) {
     if ($html.find(".er-template-toolbar").length === 0) {
       
@@ -896,7 +904,16 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
   
   const aoeData = message.flags[MODULE_ID] || {};
   const isGM = game.user.isGM;
+// Inside your aoe-easy-resolve chat message rendering block:
+$html.find('[data-token-id]').each((i, el) => {
+  const $row = $(el);
+  const tokenId = $row.attr('data-token-id');
+  
+  // Existing aoe-easy-resolve row handling...
 
+  // NATIVE INTEGRATION HOOK
+  Hooks.callAll("aoeEasyResolve.renderRow", message, $row, tokenId);
+});
   // 1. STATE-AWARE PLAYER BEACONS (Roll Save)
   $html.find(".roll-save-btn").each((index, element) => {
     const btn = $(element);
@@ -1535,6 +1552,19 @@ if (game.user.isGM) {
             effectType = negativeHealing ? "none" : "damage";
             overrideType = "void";
         }
+    } else if (originItem?.name === "Harm" || originItem?.name?.includes("Harm")) {
+        // Read the toggle flag straight from the chat card
+        const harmState = message.getFlag("necromancer-thrall-helper", `harmState_${tokenId}`) || "void";
+        if (harmState === "vit") {
+            effectType = negativeHealing ? "damage" : "heal";
+            overrideType = "vitality";
+        } else if (harmState === "heal") {
+            effectType = "heal";
+            overrideType = negativeHealing ? "void" : "vitality";
+        } else { // "void"
+            effectType = negativeHealing ? "heal" : "damage";
+            overrideType = "void";
+        }
     } else {
         if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
         else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
@@ -1756,7 +1786,7 @@ if (game.user.isGM) {
                   <i class="fas fa-info-circle" data-tooltip="${safeTooltip}" data-tooltip-direction="LEFT" style="color: #7a7971; font-size: 0.9em; cursor: help; margin-left: 4px; padding: 4px;"></i>
               </div>`;
 
-              receiptHtml += `<div class="target-row" style="display: flex; align-items: center; justify-content: space-between; background: ${rowBg}; padding: 4px 6px; border-radius: 4px;">
+             receiptHtml += `<div class="target-row" data-token-id="${entry.tokenId}" style="display: flex; align-items: center; justify-content: space-between; background: ${rowBg}; padding: 4px 6px; border-radius: 4px;">
                   <div style="display: flex; align-items: center; gap: 8px; width: 45%; flex-shrink: 0; padding-right: 6px; border-right: 1px solid rgba(255,255,255,0.1);">
                       <img src="${tokenImg}" width="28" height="28" style="border: none; border-radius: 4px; flex-shrink: 0; object-fit: cover; background: rgba(0,0,0,0.3);" />
                       <span style="font-weight: bold; line-height: 1.1; word-wrap: break-word;" title="${tokenName}">${tokenName}</span>
