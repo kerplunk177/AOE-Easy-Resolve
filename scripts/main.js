@@ -13,12 +13,72 @@ const renderHBS = async (templatePath, data) => {
   return await renderTemplate(templatePath, data);
 };
 
-// --- MODULE API EXPORTS ---
+
 Hooks.once("setup", () => {
   const module = game.modules.get(MODULE_ID);
   
   module.api = {
-   
+    // --- THE INTERCEPTOR PIPELINE ---
+    interceptors: {
+        preRenderCard: [],
+        preApplyDamage: []
+    },
+
+    registerInterceptor: function(hookName, fn, priority = 500) {
+        if (!this.interceptors[hookName]) {
+            console.warn(`AoE Easy Resolve | Attempted to register invalid hook: ${hookName}`);
+            return;
+        }
+        this.interceptors[hookName].push({ fn, priority });
+        // Sort highest priority first (e.g., 999 executes before 1)
+        this.interceptors[hookName].sort((a, b) => b.priority - a.priority);
+        console.log(`AoE Easy Resolve | Registered '${hookName}' interceptor at Priority ${priority}.`);
+    },
+
+    runInterceptors: async function(hookName, payload) {
+        if (!this.interceptors[hookName] || this.interceptors[hookName].length === 0) return payload;
+        let currentPayload = payload;
+        for (const interceptor of this.interceptors[hookName]) {
+            try {
+                currentPayload = await interceptor.fn(currentPayload);
+            } catch (err) {
+                console.error(`AoE Easy Resolve | Interceptor crash on ${hookName}:`, err);
+            }
+        }
+        return currentPayload;
+    },
+
+    // --- BACKEND UI CONTROLS ---
+    refreshCard: async function(messageId) {
+        const msg = game.messages.get(messageId);
+        if (!msg) return;
+        const aoeData = msg.flags[MODULE_ID];
+        if (!aoeData) return;
+        
+        const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+        const formattedSaveType = aoeData.saveType.charAt(0).toUpperCase() + aoeData.saveType.slice(1);
+        
+        const newHtmlContent = await renderHBS(templatePath, { 
+            targets: formatTargetsData(aoeData.targets), itemName: aoeData.itemName,
+            saveType: formattedSaveType, saveDC: aoeData.saveDC, damageTotal: aoeData.damageTotal,
+            damageBreakdown: aoeData.damageBreakdown, damageFormula: aoeData.damageFormula, damageTooltip: aoeData.damageTooltip, isGM: game.user.isGM
+        });
+        await msg.update({ content: newHtmlContent });
+    },
+
+    updateTargetState: async function(messageId, tokenId, stateChanges) {
+        const msg = game.messages.get(messageId);
+        if (!msg) return;
+        
+        let updates = {};
+        for (const [key, val] of Object.entries(stateChanges)) {
+            updates[`flags.${MODULE_ID}.targets.${tokenId}.${key}`] = val;
+        }
+        await msg.update(updates);
+        await this.refreshCard(messageId);
+    },
+
+    // --- EXISTING REGION API ---
     handleRegionEvent: async (regionEvent, originItemUuid) => {
       const token = regionEvent.data?.token || regionEvent.token;
       if (!token || !token.actor) return;
@@ -26,14 +86,7 @@ Hooks.once("setup", () => {
       const originItem = await fromUuid(originItemUuid);
       if (!originItem) return;
 
-      const reverseEventMapping = {
-        "tokenMoveIn": "tokenEnter",
-        "tokenMoveOut": "tokenExit",
-        "tokenMoveWithin": "tokenMove",
-        "turnStart": "turnStart",
-        "turnEnd": "turnEnd"
-      };
-      
+      const reverseEventMapping = { "tokenMoveIn": "tokenEnter", "tokenMoveOut": "tokenExit", "tokenMoveWithin": "tokenMove", "turnStart": "turnStart", "turnEnd": "turnEnd" };
       const moduleContext = reverseEventMapping[regionEvent.name] || regionEvent.name;
       const regionDoc = regionEvent.region || regionEvent.data?.region;
 
@@ -41,8 +94,6 @@ Hooks.once("setup", () => {
       const now = Date.now();
       if (window.aoeEasyResolveDebounce[debounceKey] && now - window.aoeEasyResolveDebounce[debounceKey] < 2000) return;
       window.aoeEasyResolveDebounce[debounceKey] = now;
-
-      console.log(`AoE Easy Resolve | API processing ${moduleContext} for ${token.name}`);
       
       await executeEffectRules([{ actor: token.actor, id: token.id, document: token }], moduleContext, "always", originItem, originItem.actor, regionDoc);
     }
@@ -1516,7 +1567,18 @@ if (game.user.isGM) {
     window.aoeEasyResolveApplying = { isApplying: true, receipt: [] };
 
     try {
-      for (const [tokenId, targetData] of Object.entries(aoeData.targets)) {
+      // --- INTERCEPTOR: PRE-APPLY DAMAGE ---
+      let applyPayload = {
+          targets: aoeData.targets,
+          originItem: originItem,
+          damageTotal: aoeData.damageTotal,
+          messageId: message.id
+      };
+      
+      applyPayload = await game.modules.get(MODULE_ID).api.runInterceptors("preApplyDamage", applyPayload);
+
+      // Execute math using the intercepted, mutated targets list
+      for (const [tokenId, targetData] of Object.entries(applyPayload.targets)) {
         
         // THE BLAST SHIELD: Wrap the entire target process so latency crashes can't break the loop
         try {
@@ -1655,15 +1717,28 @@ if (game.user.isGM) {
                   });
 
                 } else {
-                  let damageToApply = Math.floor(aoeData.damageTotal * multiplier);
+                  let damageToApply = 0;
+                  let appliedPersistent = [];
+
                   if (pf2eDamageRoll) {
                     try {
                       let formulaParts = [];
                       if (pf2eDamageRoll.instances) {
                         for (const inst of pf2eDamageRoll.instances) {
-                          const scaled = Math.floor(inst.total * multiplier);
+                          const isPersistent = inst.persistent || inst.category === "persistent" || inst.options?.includes("persistent");
                           const flavor = overrideType || inst.type || "untyped";
-                          formulaParts.push(`${scaled}[${flavor}]`);
+
+                          if (isPersistent) {
+                              if (multiplier > 0) {
+                                  // Preserve the dice formula instead of taking the flat total
+                                  let pFormula = inst.head?.expression || inst.total.toString();
+                                  if (multiplier !== 1) pFormula = `(${pFormula}) * ${multiplier}`;
+                                  appliedPersistent.push({ formula: pFormula, type: flavor });
+                              }
+                          } else {
+                              const scaled = Math.floor(inst.total * multiplier);
+                              formulaParts.push(`${scaled}[${flavor}]`);
+                          }
                         }
                       }
                       if (formulaParts.length > 0) {
@@ -1672,26 +1747,70 @@ if (game.user.isGM) {
                         damageToApply = newRoll;
                       }
                     } catch (e) { console.warn("AoE Easy Resolve | Failed to rebuild scaled DamageRoll.", e); }
+                  } else {
+                      // Fallback if no DamageRoll object (unlikely, but safe)
+                      damageToApply = Math.floor(aoeData.damageTotal * multiplier);
                   }
 
-                  let extraTraits = new Set();
-                  if (aoeData.templateId || aoeFlags.isAreaDamage) {
-                      extraTraits.add("area-damage"); 
-                      extraTraits.add("area-effect"); 
-                  }
-                  if (itemHasDamage) extraTraits.add("damaging-effect");
+                  const immediateTotal = typeof damageToApply === "number" ? damageToApply : (damageToApply?.total || 0);
 
-                  try {
-                    if (token.actor.applyDamage) {
-                      await token.actor.applyDamage({ damage: damageToApply, token: token.document, item: originItem, rollOptions: extraTraits });
-                    } else { throw new Error("PF2e applyDamage API not found on actor."); }
-                  } catch (error) {
-                    console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP manipulation.`, error);
-                    try {
-                      const finalAmount = typeof damageToApply === "number" ? damageToApply : damageToApply.total;
-                      const currentHP = token.actor.system.attributes.hp.value;
-                      await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - finalAmount) });
-                    } catch (fallbackError) { console.error(`AoE Easy Resolve | Raw HP fallback failed for ${token.name}`, fallbackError); }
+                  // 1. APPLY IMMEDIATE DAMAGE (if there is any, or if it's the only damage type so the Mugger catches the zero)
+                  if (immediateTotal > 0 || (immediateTotal === 0 && appliedPersistent.length === 0)) {
+                      let extraTraits = new Set();
+                      if (aoeData.templateId || aoeFlags.isAreaDamage) {
+                          extraTraits.add("area-damage"); 
+                          extraTraits.add("area-effect"); 
+                      }
+                      if (itemHasDamage) extraTraits.add("damaging-effect");
+
+                      try {
+                        if (token.actor.applyDamage) {
+                          await token.actor.applyDamage({ damage: damageToApply, token: token.document, item: originItem, rollOptions: extraTraits });
+                        } else { throw new Error("PF2e applyDamage API not found on actor."); }
+                      } catch (error) {
+                        console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP manipulation.`, error);
+                        try {
+                          const currentHP = token.actor.system.attributes.hp.value;
+                          await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - immediateTotal) });
+                        } catch (fallbackError) { console.error(`AoE Easy Resolve | Raw HP fallback failed for ${token.name}`, fallbackError); }
+                      }
+                  }
+
+                  // 2. APPLY PERSISTENT CONDITIONS
+                  if (appliedPersistent.length > 0) {
+                      for (const p of appliedPersistent) {
+                          try {
+                              // Safely pull the master condition schema directly from the PF2e system
+                              const baseCondition = game.pf2e.ConditionManager.getCondition("persistent-damage").toObject();
+                              baseCondition.system.persistent = {
+                                  formula: p.formula,
+                                  damageType: p.type,
+                                  dc: 15
+                              };
+                              await token.actor.createEmbeddedDocuments("Item", [baseCondition]);
+                          } catch (err) {
+                              console.error("AoE Easy Resolve | Failed to apply persistent damage condition.", err);
+                          }
+                      }
+
+                      const pStrings = appliedPersistent.map(p => `${p.formula} ${p.type}`);
+                      
+                      if (immediateTotal > 0 && window.aoeEasyResolveApplying.receipt.length > 0) {
+                          // Tack the persistent note onto the Mugger's intercepted immediate damage card
+                          const lastEntry = window.aoeEasyResolveApplying.receipt[window.aoeEasyResolveApplying.receipt.length - 1];
+                          if (lastEntry.tokenId === tokenId) {
+                              lastEntry.saveNote += `<br><span style="color:#ff6b6b">Persistent:</span> ${pStrings.join(", ")}`;
+                          }
+                      } else if (immediateTotal === 0) {
+                          // No immediate damage was dealt (e.g. Dehydrate), so we manually build a standalone receipt entry
+                          window.aoeEasyResolveApplying.receipt.push({
+                              tokenId: tokenId,
+                              speaker: { alias: token.name },
+                              img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
+                              content: `<span style="font-weight: bold; color: #ff6b6b;">Takes Persistent Damage</span>`,
+                              saveNote: `${window.aoeEasyResolveApplying.activeSaveNote}<br><span style="color:#ff6b6b">Persistent:</span> ${pStrings.join(", ")}`
+                          });
+                      }
                   }
                 }
               } else {
@@ -2072,8 +2191,7 @@ async function createVisualBurst(doc, colorHex) {
       console.error("AoE Easy Resolve | Visual Burst failed:", e);
   }
 }
-// --- TEMPLATE CONVERSION ENGINE ---
-// --- TEMPLATE CONVERSION ENGINE ---
+
 async function generateTemplateCard(doc, cfg) {
   try {
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -2267,6 +2385,7 @@ async function generateTemplateCard(doc, cfg) {
       const casterAlliance = cfg.originItem?.actor?.alliance || "party";
 
       const targetsData = {};
+
       targetedTokens.forEach(t => {
           const negativeHealing = t.actor?.system?.attributes?.hp?.negativeHealing || false;
           let effectType = "standard";
@@ -2292,11 +2411,24 @@ async function generateTemplateCard(doc, cfg) {
           };
       });
 
+     // --- INTERCEPTOR: PRE-RENDER ---
+      let payload = {
+          targets: targetsData,
+          originItem: cfg.originItem,
+          itemName: cfg.itemName,
+          saveType: cfg.saveType,
+          saveDC: cfg.saveDC,
+          hazardDamage: cfg.hazardDamage,
+          caster: cfg.originItem?.actor
+      };
+      
+      payload = await game.modules.get(MODULE_ID).api.runInterceptors("preRenderCard", payload);
+      
       const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-      const formattedSaveType = cfg.saveType.charAt(0).toUpperCase() + cfg.saveType.slice(1);
+      const formattedSaveType = payload.saveType.charAt(0).toUpperCase() + payload.saveType.slice(1);
       
       let htmlContent = await renderHBS(templatePath, { 
-          targets: formatTargetsData(targetsData), itemName: cfg.itemName, saveType: formattedSaveType, saveDC: cfg.saveDC,
+          targets: formatTargetsData(payload.targets), itemName: payload.itemName, saveType: formattedSaveType, saveDC: payload.saveDC,
           damageTotal: null, damageBreakdown: null, damageFormula: null, damageTooltip: null, isGM: game.user.isGM
       });
 
