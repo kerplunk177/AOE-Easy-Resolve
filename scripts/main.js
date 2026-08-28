@@ -118,10 +118,10 @@ Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
   if (window.aoeEasyResolveApplying?.isApplying && message.isAuthor) {
       const context = message.flags?.pf2e?.context;
       if (context && context.type === "damage-taken") {
-          const tokenId = message.speaker?.token;
-          const token = canvas.tokens.get(tokenId);
-          
-          let pf2eIWR = [];
+        const tokenId = message.speaker?.token || window.aoeEasyResolveApplying.activeTokenId;
+        const token = canvas.tokens.get(tokenId);
+        
+        let pf2eIWR = [];
           const fullHtml = (message.flavor || "") + " " + (message.content || "");
           let decodedHtml = fullHtml.replace(/&quot;/g, '"');
           
@@ -960,9 +960,7 @@ $html.find('[data-token-id]').each((i, el) => {
   const $row = $(el);
   const tokenId = $row.attr('data-token-id');
   
-  // Existing aoe-easy-resolve row handling...
 
-  // NATIVE INTEGRATION HOOK
   Hooks.callAll("aoeEasyResolve.renderRow", message, $row, tokenId);
 });
   // 1. STATE-AWARE PLAYER BEACONS (Roll Save)
@@ -1567,71 +1565,65 @@ if (game.user.isGM) {
     window.aoeEasyResolveApplying = { isApplying: true, receipt: [] };
 
     try {
-      // --- INTERCEPTOR: PRE-APPLY DAMAGE ---
-      let applyPayload = {
-          targets: aoeData.targets,
-          originItem: originItem,
-          damageTotal: aoeData.damageTotal,
-          messageId: message.id
-      };
-      
+      let applyPayload = { targets: aoeData.targets, originItem: originItem, damageTotal: aoeData.damageTotal, messageId: message.id };
       applyPayload = await game.modules.get(MODULE_ID).api.runInterceptors("preApplyDamage", applyPayload);
 
-      // Execute math using the intercepted, mutated targets list
       for (const [tokenId, targetData] of Object.entries(applyPayload.targets)) {
-        
-        // THE BLAST SHIELD: Wrap the entire target process so latency crashes can't break the loop
         try {
             const token = canvas.tokens.get(tokenId);
             if (!token || !token.actor) continue;
             if (targetData.hasApplied) continue; 
 
+            // FIX: Ensure active token is logged so the Mugger catches dying mobs
             window.aoeEasyResolveApplying.activeSaveNote = ""; 
+            window.aoeEasyResolveApplying.activeTokenId = tokenId;
 
             const negativeHealing = token.actor.system.attributes.hp?.negativeHealing || false;
-    const itemTraits = originItem?.system?.traits?.value || [];
-    let isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
-    let isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
-    const isHealingTrait = itemTraits.includes("healing");
+            const itemTraits = originItem?.system?.traits?.value || [];
+            let isVitality = itemTraits.includes("vitality") || itemTraits.includes("positive");
+            let isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
+            const isHealingTrait = itemTraits.includes("healing");
 
-    // Specific case for Necrotic Bomb per-target toggles
-    if (originItem?.name === "Necrotic Bomb") {
-        const targetType = message.getFlag("necromancer-thrall-helper", `dmgType_${tokenId}`) || "void";
-        isVitality = (targetType === "vitality");
-        isVoid = (targetType === "void");
-    }
+            // FIX: Smart Identifier using .includes to catch variants (Necrotic Blast, etc.)
+            const cardItemName = aoeData.itemName || originItem?.name || "";
+            const isBomb = cardItemName.includes("Necrotic Bomb") || cardItemName.includes("Necrotic Blast");
+            const isHarm = cardItemName === "Harm" || cardItemName.includes("Harm");
 
-    let effectType = "standard";
-    let overrideType = null;
+            if (isBomb) {
+                const targetType = message.getFlag("necromancer-thrall-helper", `dmgType_${tokenId}`) || "void";
+                isVitality = (targetType === "vitality");
+                isVoid = (targetType === "void");
+            }
 
-    if (originItem?.name === "Necrotic Bomb") {
-        // Necrotic Bomb is a damage bomb, so vitality harms undead and void harms the living. 
-        // Neither energy type converts to random healing for unaffected biology.
-        if (isVitality) {
-            effectType = negativeHealing ? "damage" : "none";
-            overrideType = "vitality";
-        } else if (isVoid) {
-            effectType = negativeHealing ? "none" : "damage";
-            overrideType = "void";
-        }
-    } else if (originItem?.name === "Harm" || originItem?.name?.includes("Harm")) {
-        // Read the toggle flag straight from the chat card
-        const harmState = message.getFlag("necromancer-thrall-helper", `harmState_${tokenId}`) || "void";
-        if (harmState === "vit") {
-            effectType = negativeHealing ? "damage" : "heal";
-            overrideType = "vitality";
-        } else if (harmState === "heal") {
-            effectType = "heal";
-            overrideType = negativeHealing ? "void" : "vitality";
-        } else { // "void"
-            effectType = negativeHealing ? "heal" : "damage";
-            overrideType = "void";
-        }
-    } else {
-        if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
-        else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
-        else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
-    }
+            let effectType = "standard";
+            let overrideType = null;
+
+            if (isBomb) {
+                if (isVitality) {
+                    effectType = negativeHealing ? "damage" : "none";
+                    overrideType = "vitality";
+                } else if (isVoid) {
+                    effectType = negativeHealing ? "none" : "damage";
+                    overrideType = "void";
+                }
+            } else if (isHarm) {
+                const harmState = message.getFlag("necromancer-thrall-helper", `harmState_${tokenId}`) || "void";
+                if (harmState === "vit") {
+                    effectType = negativeHealing ? "damage" : "heal";
+                    overrideType = "vitality";
+                } else if (harmState === "heal") {
+                    effectType = "heal";
+                    overrideType = negativeHealing ? "void" : "vitality";
+                } else {
+                    effectType = negativeHealing ? "heal" : "damage";
+                    overrideType = "void";
+                }
+            } else {
+                if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
+                else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
+                else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
+            }
+
             if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) effectType = negativeHealing ? "none" : "heal";
 
             const targetAlliance = token.actor?.alliance;
@@ -1644,11 +1636,8 @@ if (game.user.isGM) {
 
             if (effectType === "none") { 
               window.aoeEasyResolveApplying.receipt.push({
-                  tokenId: tokenId,
-                  speaker: { alias: token.name },
-                  img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
-                  content: `<span style="font-weight: bold; color: #888;">Immune. Takes no damage.</span>`,
-                  saveNote: "Target is Immune"
+                  tokenId: tokenId, speaker: { alias: token.name }, img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
+                  content: `<span style="font-weight: bold; color: #888;">Immune. Takes no damage.</span>`, saveNote: "Target is Immune"
               });
               processedCount++; 
               msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true; 
@@ -1696,28 +1685,22 @@ if (game.user.isGM) {
                   const currentHP = token.actor.system.attributes.hp.value;
                   const maxHP = token.actor.system.attributes.hp.max;
                   const actualHealed = Math.min(maxHP - currentHP, healAmount);
-                  const newHP = currentHP + actualHealed;
                   
-                  await token.actor.update({ "system.attributes.hp.value": newHP });
+                  await token.actor.update({ "system.attributes.hp.value": currentHP + actualHealed });
 
                   try {
                     if (canvas.ready && actualHealed > 0) {
                       canvas.interface.createScrollingText(token.center, `+${actualHealed}`, { anchor: CONST.TEXT_ANCHOR_POINTS.TOP, fill: 0x4ade80, direction: CONST.TEXT_ANCHOR_POINTS.UP });
                     }
-                  } catch (err) {
-                    console.warn("AoE Easy Resolve | Suppressed 3rd-party module crash on scrolling text.", err);
-                  }
+                  } catch (err) {}
                   
                   window.aoeEasyResolveApplying.receipt.push({
-                      tokenId: tokenId,
-                      speaker: { alias: token.name },
-                      img: token.document.texture.src,
-                      content: `<span style="color: #4ade80; font-weight: bold; text-shadow: 1px 1px 2px black;">Recovered ${actualHealed} HP</span>`,
-                      saveNote: "Healing Applied"
+                      tokenId: tokenId, speaker: { alias: token.name }, img: token.document.texture.src,
+                      content: `<span style="color: #4ade80; font-weight: bold; text-shadow: 1px 1px 2px black;">Recovered ${actualHealed} HP</span>`, saveNote: "Healing Applied"
                   });
 
                 } else {
-                  let damageToApply = 0;
+                  let damageToApply = null;
                   let appliedPersistent = [];
 
                   if (pf2eDamageRoll) {
@@ -1730,31 +1713,33 @@ if (game.user.isGM) {
 
                           if (isPersistent) {
                               if (multiplier > 0) {
-                                  // Preserve the dice formula instead of taking the flat total
-                                  let pFormula = inst.head?.expression || inst.total.toString();
+                                  let pFormula = inst.head?.expression || inst.total?.toString() || "0";
                                   if (multiplier !== 1) pFormula = `(${pFormula}) * ${multiplier}`;
                                   appliedPersistent.push({ formula: pFormula, type: flavor });
                               }
                           } else {
-                              const scaled = Math.floor(inst.total * multiplier);
+                              const baseTotal = inst.total !== undefined ? inst.total : (aoeData.damageTotal || 0);
+                              const scaled = Math.floor(baseTotal * multiplier);
                               formulaParts.push(`${scaled}[${flavor}]`);
                           }
                         }
                       }
                       if (formulaParts.length > 0) {
-                        const newRoll = new pf2eDamageClass(formulaParts.join(", "));
-                        await newRoll.evaluate();
-                        damageToApply = newRoll;
+                        damageToApply = await new pf2eDamageClass(formulaParts.join(", ")).evaluate({async: true});
                       }
                     } catch (e) { console.warn("AoE Easy Resolve | Failed to rebuild scaled DamageRoll.", e); }
-                  } else {
-                      // Fallback if no DamageRoll object (unlikely, but safe)
-                      damageToApply = Math.floor(aoeData.damageTotal * multiplier);
+                  } 
+                  
+                  // FIX: Bypass frozen properties by fully rebuilding string
+                  if (!damageToApply) {
+                      const fallbackTotal = Math.floor((aoeData.damageTotal || 0) * multiplier);
+                      const fallbackFlavor = overrideType || "untyped";
+                      damageToApply = await new pf2eDamageClass(`${fallbackTotal}[${fallbackFlavor}]`).evaluate({async: true});
                   }
 
-                  const immediateTotal = typeof damageToApply === "number" ? damageToApply : (damageToApply?.total || 0);
+                  const immediateTotal = damageToApply.total || 0;
 
-                  // 1. APPLY IMMEDIATE DAMAGE (if there is any, or if it's the only damage type so the Mugger catches the zero)
+                  // 1. APPLY IMMEDIATE DAMAGE
                   if (immediateTotal > 0 || (immediateTotal === 0 && appliedPersistent.length === 0)) {
                       let extraTraits = new Set();
                       if (aoeData.templateId || aoeFlags.isAreaDamage) {
@@ -1768,11 +1753,20 @@ if (game.user.isGM) {
                           await token.actor.applyDamage({ damage: damageToApply, token: token.document, item: originItem, rollOptions: extraTraits });
                         } else { throw new Error("PF2e applyDamage API not found on actor."); }
                       } catch (error) {
-                        console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP manipulation.`, error);
+                        console.warn(`AoE Easy Resolve | Native applyDamage failed for ${token.name}. Using raw HP fallback.`, error);
                         try {
                           const currentHP = token.actor.system.attributes.hp.value;
                           await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - immediateTotal) });
-                        } catch (fallbackError) { console.error(`AoE Easy Resolve | Raw HP fallback failed for ${token.name}`, fallbackError); }
+                          
+                          // FIX: FORCE IT ONTO THE RECEIPT SO DYING TOKENS DON'T VANISH WHEN APPLYDAMAGE CRASHES
+                          window.aoeEasyResolveApplying.receipt.push({
+                              tokenId: tokenId,
+                              speaker: { alias: token.name },
+                              img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
+                              content: `<span style="color: #ff8c00; font-weight: bold;">Took ${immediateTotal} Damage (Fallback)</span>`,
+                              saveNote: window.aoeEasyResolveApplying.activeSaveNote
+                          });
+                        } catch (fallbackError) { }
                       }
                   }
 
@@ -1780,33 +1774,19 @@ if (game.user.isGM) {
                   if (appliedPersistent.length > 0) {
                       for (const p of appliedPersistent) {
                           try {
-                              // Safely pull the master condition schema directly from the PF2e system
                               const baseCondition = game.pf2e.ConditionManager.getCondition("persistent-damage").toObject();
-                              baseCondition.system.persistent = {
-                                  formula: p.formula,
-                                  damageType: p.type,
-                                  dc: 15
-                              };
+                              baseCondition.system.persistent = { formula: p.formula, damageType: p.type, dc: 15 };
                               await token.actor.createEmbeddedDocuments("Item", [baseCondition]);
-                          } catch (err) {
-                              console.error("AoE Easy Resolve | Failed to apply persistent damage condition.", err);
-                          }
+                          } catch (err) { }
                       }
 
                       const pStrings = appliedPersistent.map(p => `${p.formula} ${p.type}`);
-                      
                       if (immediateTotal > 0 && window.aoeEasyResolveApplying.receipt.length > 0) {
-                          // Tack the persistent note onto the Mugger's intercepted immediate damage card
                           const lastEntry = window.aoeEasyResolveApplying.receipt[window.aoeEasyResolveApplying.receipt.length - 1];
-                          if (lastEntry.tokenId === tokenId) {
-                              lastEntry.saveNote += `<br><span style="color:#ff6b6b">Persistent:</span> ${pStrings.join(", ")}`;
-                          }
+                          if (lastEntry.tokenId === tokenId) lastEntry.saveNote += `<br><span style="color:#ff6b6b">Persistent:</span> ${pStrings.join(", ")}`;
                       } else if (immediateTotal === 0) {
-                          // No immediate damage was dealt (e.g. Dehydrate), so we manually build a standalone receipt entry
                           window.aoeEasyResolveApplying.receipt.push({
-                              tokenId: tokenId,
-                              speaker: { alias: token.name },
-                              img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
+                              tokenId: tokenId, speaker: { alias: token.name }, img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
                               content: `<span style="font-weight: bold; color: #ff6b6b;">Takes Persistent Damage</span>`,
                               saveNote: `${window.aoeEasyResolveApplying.activeSaveNote}<br><span style="color:#ff6b6b">Persistent:</span> ${pStrings.join(", ")}`
                           });
@@ -1815,11 +1795,8 @@ if (game.user.isGM) {
                 }
               } else {
                 window.aoeEasyResolveApplying.receipt.push({
-                    tokenId: tokenId,
-                    speaker: { alias: token.name },
-                    img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
-                    content: `<span style="font-weight: bold; color: #888;">Takes no damage.</span>`,
-                    saveNote: window.aoeEasyResolveApplying.activeSaveNote || "Complete Mitigation"
+                    tokenId: tokenId, speaker: { alias: token.name }, img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
+                    content: `<span style="font-weight: bold; color: #888;">Takes no damage.</span>`, saveNote: window.aoeEasyResolveApplying.activeSaveNote || "Complete Mitigation"
                 });
               }
             }
@@ -1832,7 +1809,6 @@ if (game.user.isGM) {
             
         } catch (targetErr) {
             console.error(`AoE Easy Resolve | Network latency interrupted target ${tokenId}. Skipping to next.`, targetErr);
-            ui.notifications.warn(`AoE Easy Resolve | Encountered latency while processing one target. Check chat log to verify application.`);
         }
       }
     } catch (fatalErr) {
