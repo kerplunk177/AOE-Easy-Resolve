@@ -1,10 +1,110 @@
 console.log("AoE Easy Resolve | Script loaded successfully.");
-
 const MODULE_ID = "aoe-easy-resolve";
+// --- SOCKETLIB INTEGRATION ---
+window.aoeSocket = null;
+
+Hooks.once("setup", () => {
+    if (game.modules.get("socketlib")?.active) {
+        window.aoeSocket = socketlib.registerModule(MODULE_ID);
+        window.aoeSocket.register("handleSocketPayload", handleSocketPayload);
+        console.log("AoE Easy Resolve | 🔌 Socketlib integrated successfully.");
+    } else {
+        console.warn("AoE Easy Resolve | Socketlib is not active. Player functionality will be disabled.");
+    }
+});
+
 window.aoeEasyResolveCache = null;
 window.aoeEasyResolveQueue = Promise.resolve();
 window.aoeEasyResolveDebounce = {};
+// --- NATIVE SOCKET ROUTER ---
+async function handleSocketPayload(data) {
+  window.aoeEasyResolveQueue = window.aoeEasyResolveQueue.then(async () => {
+    try {
+      const api = game.modules.get(MODULE_ID)?.api;
+      if (!api) {
+          console.error("AoE Easy Resolve | ROUTER DEAD: API not attached to module object!");
+          return;
+      }
 
+      if (data.action === "updateSaveRoll") {
+        await api.updateTargetState(data.messageId, data.tokenId, {
+          hasRolled: true,
+          rollTotal: data.rollTotal,
+          rollFormula: data.rollFormula,
+          rollTooltip: data.rollTooltip,
+          degreeOfSuccess: data.dos,
+          unadjustedDegreeOfSuccess: data.unadjustedDos,
+          hasUsedHeroPoint: data.hasUsedHeroPoint || false,
+          hasCover: data.hasCover || false
+        });
+
+      } else if (data.action === "updateDamageRoll") {
+        await api.updateDamageState(data.messageId, data);
+        
+      } else if (data.action === "createRegion") {
+        const targetScene = game.scenes.get(data.sceneId);
+        if (!targetScene) return;
+        
+        const newRegions = await targetScene.createEmbeddedDocuments("Region", [data.regionData]);
+        const targetTemplate = targetScene.templates.get(data.templateId);
+        if (targetTemplate) await targetTemplate.delete();
+        
+        await new Promise(resolve => setTimeout(resolve, 200));
+        if (newRegions.length > 0) {
+            await createVisualGhost(targetScene, newRegions[0], data.userColor);
+        }
+        
+      } else if (data.action === "updateRegion") {
+        const targetScene = game.scenes.get(data.sceneId);
+        const targetRegion = targetScene?.regions.get(data.regionId);
+        
+        if (targetRegion) {
+            await targetRegion.update({
+                [`flags.${MODULE_ID}.isAoERegion`]: true,
+                [`flags.${MODULE_ID}.originItemUuid`]: data.originItemUuid,
+                [`flags.${MODULE_ID}.persistentRules`]: data.persistentRules,
+                [`flags.${MODULE_ID}.saveDC`]: data.saveDC,
+                [`flags.${MODULE_ID}.duration`]: data.hazardDuration
+            });
+            
+            const hasBehavior = targetRegion.behaviors?.some(b => b.name === `AoE Easy Resolve Controller`);
+            if (!hasBehavior) {
+                await targetRegion.createEmbeddedDocuments("RegionBehavior", [{
+                    name: `AoE Easy Resolve Controller`,
+                    type: `executeScript`,
+                    system: {
+                        events: data.subscribedEvents,
+                        source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${data.originItemUuid}');\n}`
+                    }
+                }]);
+            }
+            await createVisualGhost(targetScene, targetRegion, data.userColor);
+        }
+      }
+    } catch (error) { console.error(`${MODULE_ID} | SOCKET ROUTER CRASHED:`, error); }
+  }).catch(err => { console.error(`${MODULE_ID} | Queue encountered an error:`, err); });
+}
+
+// --- HEAVY DIAGNOSTIC MASTER ROUTER ---
+window.aoeEasyResolveRoute = function(action, payload) {
+  payload.action = action;
+  
+  let cleanPayload;
+  try {
+      cleanPayload = JSON.parse(JSON.stringify(payload));
+  } catch (err) {
+      console.error("AoE Easy Resolve | Failed to sanitize payload! Hidden circular reference detected:", err);
+      return;
+  }
+  
+  if (game.user.isGM) {
+      console.log(`AoE Easy Resolve | GM Local Route Triggered: ${action}`);
+      handleSocketPayload(cleanPayload);
+  } else {
+      console.log(`AoE Easy Resolve | Player Emitting Clean Socket: ${action}`, cleanPayload);
+      game.socket.emit(`module.${MODULE_ID}`, cleanPayload);
+  }
+};
 // --- FOUNDRY V14 COMPATIBILITY WRAPPERS ---
 const renderHBS = async (templatePath, data) => {
   if (foundry.applications?.handlebars?.renderTemplate) {
@@ -13,108 +113,154 @@ const renderHBS = async (templatePath, data) => {
   return await renderTemplate(templatePath, data);
 };
 
-
 Hooks.once("setup", () => {
   const module = game.modules.get(MODULE_ID);
   
   module.api = {
-    // --- THE INTERCEPTOR PIPELINE ---
     interceptors: {
         preRenderCard: [],
         preApplyDamage: []
     },
 
     registerInterceptor: function(hookName, fn, priority = 500) {
-        if (!this.interceptors[hookName]) {
-            console.warn(`AoE Easy Resolve | Attempted to register invalid hook: ${hookName}`);
-            return;
-        }
+        if (!this.interceptors[hookName]) return;
         this.interceptors[hookName].push({ fn, priority });
-        // Sort highest priority first (e.g., 999 executes before 1)
         this.interceptors[hookName].sort((a, b) => b.priority - a.priority);
-        console.log(`AoE Easy Resolve | Registered '${hookName}' interceptor at Priority ${priority}.`);
     },
 
     runInterceptors: async function(hookName, payload) {
         if (!this.interceptors[hookName] || this.interceptors[hookName].length === 0) return payload;
         let currentPayload = payload;
         for (const interceptor of this.interceptors[hookName]) {
-            try {
-                currentPayload = await interceptor.fn(currentPayload);
-            } catch (err) {
-                console.error(`AoE Easy Resolve | Interceptor crash on ${hookName}:`, err);
-            }
+            try { currentPayload = await interceptor.fn(currentPayload); } 
+            catch (err) { console.error(`AoE Easy Resolve | Interceptor crash:`, err); }
         }
         return currentPayload;
     },
 
-    // --- BACKEND UI CONTROLS ---
-    refreshCard: async function(messageId) {
-        const msg = game.messages.get(messageId);
-        if (!msg) return;
-        const aoeData = msg.flags[MODULE_ID];
-        if (!aoeData) return;
-        
-        const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-        const formattedSaveType = aoeData.saveType.charAt(0).toUpperCase() + aoeData.saveType.slice(1);
-        
-        const newHtmlContent = await renderHBS(templatePath, { 
-            targets: formatTargetsData(aoeData.targets), itemName: aoeData.itemName,
-            saveType: formattedSaveType, saveDC: aoeData.saveDC, damageTotal: aoeData.damageTotal,
-            damageBreakdown: aoeData.damageBreakdown, damageFormula: aoeData.damageFormula, damageTooltip: aoeData.damageTooltip, isGM: game.user.isGM
-        });
-        await msg.update({ content: newHtmlContent });
-    },
-
     updateTargetState: async function(messageId, tokenId, stateChanges) {
-        const msg = game.messages.get(messageId);
-        if (!msg) return;
-        
-        let updates = {};
-        for (const [key, val] of Object.entries(stateChanges)) {
-            updates[`flags.${MODULE_ID}.targets.${tokenId}.${key}`] = val;
-        }
-        await msg.update(updates);
-        await this.refreshCard(messageId);
-    },
+      console.log(`AoE Easy Resolve | Queue executing: Target Save for Token ${tokenId}`);
+      const msg = game.messages.get(messageId);
+      if (!msg) {
+          console.error("AoE Easy Resolve | Target Update Failed: Could not find ChatMessage", messageId);
+          return;
+      }
 
-    // --- EXISTING REGION API ---
+      let flagUpdates = {};
+      for (const [key, val] of Object.entries(stateChanges)) {
+          flagUpdates[`flags.${MODULE_ID}.targets.${tokenId}.${key}`] = val;
+      }
+      
+      await msg.update(flagUpdates);
+
+      const freshMsg = game.messages.get(messageId);
+      const aoeData = freshMsg.flags[MODULE_ID];
+      const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+      const formattedSaveType = aoeData.saveType.charAt(0).toUpperCase() + aoeData.saveType.slice(1);
+      
+      const newHtmlContent = await renderHBS(templatePath, { 
+          targets: formatTargetsData(aoeData.targets), 
+          itemName: aoeData.itemName,
+          saveType: formattedSaveType, 
+          saveDC: aoeData.saveDC, 
+          damageTotal: aoeData.damageTotal,
+          damageBreakdown: aoeData.damageBreakdown, 
+          damageFormula: aoeData.damageFormula, 
+          damageTooltip: aoeData.damageTooltip, 
+          isGM: true 
+      });
+
+      await freshMsg.update({ content: newHtmlContent });
+      console.log(`AoE Easy Resolve | Target Save UI Updated Successfully.`);
+  },
+
+  updateDamageState: async function(messageId, damageData) {
+      console.log(`AoE Easy Resolve | Queue executing: Damage Roll Application`);
+      const msg = game.messages.get(messageId);
+      if (!msg) {
+          console.error("AoE Easy Resolve | Damage Update Failed: Could not find ChatMessage", messageId);
+          return;
+      }
+
+      let flagUpdates = {
+          [`flags.${MODULE_ID}.damageJSON`]: damageData.damageJSON, 
+          [`flags.${MODULE_ID}.damageTotal`]: damageData.damageTotal,
+          [`flags.${MODULE_ID}.damageBreakdown`]: damageData.damageBreakdown, 
+          [`flags.${MODULE_ID}.damageFormula`]: damageData.damageFormula,
+          [`flags.${MODULE_ID}.damageTooltip`]: damageData.damageTooltip
+      };
+
+      await msg.update(flagUpdates);
+
+      const freshMsg = game.messages.get(messageId);
+      const aoeData = freshMsg.flags[MODULE_ID];
+      const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
+      const formattedSaveType = aoeData.saveType.charAt(0).toUpperCase() + aoeData.saveType.slice(1);
+      
+      const newHtmlContent = await renderHBS(templatePath, { 
+          targets: formatTargetsData(aoeData.targets), 
+          itemName: aoeData.itemName,
+          saveType: formattedSaveType, 
+          saveDC: aoeData.saveDC, 
+          damageTotal: aoeData.damageTotal,
+          damageBreakdown: aoeData.damageBreakdown, 
+          damageFormula: aoeData.damageFormula, 
+          damageTooltip: aoeData.damageTooltip, 
+          isGM: true 
+      });
+
+      await freshMsg.update({ content: newHtmlContent });
+      console.log(`AoE Easy Resolve | Damage Roll UI Updated Successfully.`);
+  },
+
     handleRegionEvent: async (regionEvent, originItemUuid) => {
-      const token = regionEvent.data?.token || regionEvent.token;
-      if (!token || !token.actor) return;
+      if (!game.user.isGM) return;
+      const activeGM = game.users.activeGM;
+      if (activeGM && game.user.id !== activeGM.id) return;
+
+      const tokenDoc = regionEvent.data?.token || regionEvent.token;
+      if (!tokenDoc || !tokenDoc.actor) return;
+      
+      const regionDoc = regionEvent.region || regionEvent.data?.region;
+      if (!regionDoc) return;
+
+      const moduleContext = regionEvent.name;
+
+      const debounceKey = `${tokenDoc.id}-${regionDoc.id}-${moduleContext}`;
+      if (window.aoeEasyResolveDebounce[debounceKey]) return;
+      window.aoeEasyResolveDebounce[debounceKey] = true;
+      setTimeout(() => delete window.aoeEasyResolveDebounce[debounceKey], 100);
+
+      if (moduleContext === "tokenExit") {
+          const effectsToDelete = tokenDoc.actor.items.filter(i => 
+              (i.type === "effect" || i.type === "condition") && 
+              i.getFlag(MODULE_ID, "originRegion") === regionDoc.id
+          ).map(i => i.id);
+
+          if (effectsToDelete.length > 0) {
+            try { await tokenDoc.actor.deleteEmbeddedDocuments("Item", effectsToDelete); } catch(e) {}
+          }
+      }
 
       const originItem = await fromUuid(originItemUuid);
       if (!originItem) return;
-
-      const reverseEventMapping = { "tokenMoveIn": "tokenEnter", "tokenMoveOut": "tokenExit", "tokenMoveWithin": "tokenMove", "turnStart": "turnStart", "turnEnd": "turnEnd" };
-      const moduleContext = reverseEventMapping[regionEvent.name] || regionEvent.name;
-      const regionDoc = regionEvent.region || regionEvent.data?.region;
-
-      const debounceKey = `${token.id}-${regionDoc?.id || 'unknown'}-${moduleContext}`;
-      const now = Date.now();
-      if (window.aoeEasyResolveDebounce[debounceKey] && now - window.aoeEasyResolveDebounce[debounceKey] < 2000) return;
-      window.aoeEasyResolveDebounce[debounceKey] = now;
-      
-      await executeEffectRules([{ actor: token.actor, id: token.id, document: token }], moduleContext, "always", originItem, originItem.actor, regionDoc);
+      await executeEffectRules([{ actor: tokenDoc.actor, id: tokenDoc.id, document: tokenDoc }], moduleContext, "always", originItem, originItem.actor, regionDoc);
     }
   };
 });
 
 
-// --- THE COMBAT RECEIPT MUGGER ---
 Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
-  // 1. Intercepting the "Roll Damage" card aggressively
   if (window.aoeEasyResolveRollingDamage && message.isAuthor) {
       if (message.rolls?.length > 0 || (message.flags?.pf2e?.context?.type || "").includes("damage")) {
           window.aoeEasyResolveDamageRollData = {
               rolls: message.rolls,
               flags: message.flags
           };
-          return false; // Burn the native damage card
+          return false;
       }
   }
 
-  // 2. Intercepting the "Apply Damage" cards
   if (window.aoeEasyResolveApplying?.isApplying && message.isAuthor) {
       const context = message.flags?.pf2e?.context;
       if (context && context.type === "damage-taken") {
@@ -125,14 +271,11 @@ Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
           const fullHtml = (message.flavor || "") + " " + (message.content || "");
           let decodedHtml = fullHtml.replace(/&quot;/g, '"');
           
-          // The Skeleton Key: Extract any JSON object containing IWR data, completely ignoring key names
           const jsonMatches = decodedHtml.match(/\{[^{}]*(?:resist|weak|immun)[^{}]*\}/gi);
           if (jsonMatches) {
               jsonMatches.forEach(obj => {
-                  // Grab any string mapped to category, type, or damageType
                   let strVals = [...obj.matchAll(/"(?:category|type|damageType)"\s*:\s*"([^"]+)"/gi)].map(m => m[1]);
                   
-                  // The Net: Catch adjustment, value, amount, ignored, reduced, or magnitude, even if wrapped in quotes
                   let numVal = obj.match(/"(?:adjustment|value|amount|ignored|reduced|magnitude)"\s*:\s*"?(\d+)"?/i)?.[1] || "";
                   
                   if (strVals.length > 0) {
@@ -150,10 +293,9 @@ Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
               });
           }
 
-          // Fallback just in case they drop JSON entirely and print standard text
           if (pf2eIWR.length === 0) {
-              let safeHtml = decodedHtml.replace(/\[\{.*?\}\]/g, ""); // Nuke unparsed JSON arrays
-              safeHtml = safeHtml.replace(/<[^>]*>/g, " ").replace(/\s\s+/g, " "); // Flatten HTML
+              let safeHtml = decodedHtml.replace(/\[\{.*?\}\]/g, "");
+              safeHtml = safeHtml.replace(/<[^>]*>/g, " ").replace(/\s\s+/g, " "); 
               
               const textRegex = /\b(?:Resistance|Weakness|Immunity)\s*(?:\d+)?\s*(?:\([^)]+\))?/gi;
               let textMatches = safeHtml.match(textRegex);
@@ -166,6 +308,28 @@ Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
               }
           }
 
+          let appliedDmg = message.flags?.pf2e?.appliedDamage;
+          let valTotal = 0;
+          
+          if (appliedDmg && (appliedDmg.damage !== undefined || appliedDmg.amount !== undefined)) {
+              valTotal = parseInt(appliedDmg.damage || appliedDmg.amount) || 0;
+          }
+          if (valTotal === 0 && decodedHtml) {
+              let cleanText = decodedHtml.replace(/<[^>]*>?/gm, ' ').trim();
+              let textMatch = cleanText.match(/(?:damaged for|healed|takes|restored|healing|applied|recovered|loses|hit for)[^\d]*(\d+)/i) || cleanText.match(/(\d+)\s*(?:HP|Damage|DMG|Heal|Healing|applied|points)/i);
+              if (textMatch) valTotal = parseInt(textMatch[1], 10);
+          }
+          let isHeal = appliedDmg ? !!appliedDmg.isHealing : false;
+          let mitTotal = 0;
+          let mitRegex = /(?:reduced by|resist|absorb|shield block|mitigat)[^\d]*(\d+)/ig;
+          let mitMatch;
+          while ((mitMatch = mitRegex.exec(decodedHtml)) !== null) mitTotal += parseInt(mitMatch[1]);
+          
+          let isKill = /(?:unconscious|dying|dead|destroyed|kill)/i.test(decodedHtml);
+          if (appliedDmg && appliedDmg.updates) {
+              appliedDmg.updates.forEach(u => { if (u.path?.includes("hp.value") && parseInt(u.value) <= 0) isKill = true; });
+          }
+
           window.aoeEasyResolveApplying.receipt.push({
               tokenId: tokenId,
               speaker: message.speaker,
@@ -173,10 +337,11 @@ Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
               flavor: message.flavor,
               content: message.content,
               saveNote: window.aoeEasyResolveApplying.activeSaveNote || "",
-              iwr: [...new Set(pf2eIWR)] 
+              iwr: [...new Set(pf2eIWR)],
+              forensics: { valueTotal: valTotal, isHealing: isHeal, mitigatedTotal: mitTotal, isKill: isKill }
           });
-          return false; 
-      }
+          return false;
+        }
   }
 });
 
@@ -335,10 +500,9 @@ async function executeEffectRules(targetsArray, contextStr, outcomeStr, originIt
         });
     }
 
-    // Filter by Trait Requirement (using the already-filtered validTargets)
+    // Filter by Trait Requirement 
     if (rule.trait && rule.trait.trim() !== "") {
         const reqTraits = rule.trait.split(",").map(t => t.trim().toLowerCase()).filter(t => t !== "");
-        
         validTargets = validTargets.filter(t => {
             const actorTraits = t.actor?.system?.traits?.value || [];
             return actorTraits.some(tr => reqTraits.includes(tr.toLowerCase()));
@@ -362,26 +526,41 @@ async function executeEffectRules(targetsArray, contextStr, outcomeStr, originIt
           if (cleanUuid.includes("{")) cleanUuid = cleanUuid.split("{")[0];
 
           try {
-              const conditionItem = await fromUuid(cleanUuid);
-              if (conditionItem) {
-                  const itemData = conditionItem.toObject();
-                  for (let t of validTargets) {
-                      if (t.actor) await t.actor.createEmbeddedDocuments("Item", [itemData]);
-                  }
-                  ui.notifications.info(`AoE Easy Resolve | Applied ${conditionItem.name}.`);
-              } else {
-                  console.warn(`AoE Easy Resolve | Could not locate UUID: ${cleanUuid}`);
-              }
-          } catch(e) { console.error("AoE Easy Resolve | Error applying condition", e); }
+            const conditionItem = await fromUuid(cleanUuid);
+            if (conditionItem) {
+                const itemData = conditionItem.toObject();
+                delete itemData._id; 
+                
+                if (regionDoc && rule.removeOnExit) {
+                    itemData.flags = itemData.flags || {};
+                    itemData.flags[MODULE_ID] = itemData.flags[MODULE_ID] || {};
+                    itemData.flags[MODULE_ID].originRegion = regionDoc.id;
+                }
+
+                for (let t of validTargets) {
+                    if (!t.actor) continue;
+                    
+                    const createdItems = await t.actor.createEmbeddedDocuments("Item", [itemData]);
+                    
+                    if (regionDoc && rule.removeOnExit) {
+                        for (let c of createdItems) {
+                            try { await c.setFlag(MODULE_ID, "originRegion", regionDoc.id); } catch(err) {}
+                        }
+                    }
+                }
+                ui.notifications.info(`AoE Easy Resolve | Applied ${conditionItem.name}.`);
+            } else {
+                console.warn(`AoE Easy Resolve | Could not locate UUID: ${cleanUuid}`);
+            }
+        } catch(e) { console.error("AoE Easy Resolve | Error applying condition", e); }
       }
 
       if (rule.damageFormula) {
           try {
               const formula = rule.damageType ? `(${rule.damageFormula})[${rule.damageType}]` : rule.damageFormula;
               const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
-              const dRoll = await new pf2eDamageClass(formula).evaluate({ async: true });
-
-              if (game.dice3d) await game.dice3d.showForRoll(dRoll, game.user, true);
+              
+              const dRoll = await new pf2eDamageClass(formula).evaluate();
 
               const outcomeLabels = { criticalSuccess: "Critical", success: "Hit/Success", failure: "Miss/Failure", criticalFailure: "Critical Miss", always: "Persistent" };
               const traitNotice = rule.trait ? ` (vs ${rule.trait})` : "";
@@ -389,26 +568,44 @@ async function executeEffectRules(targetsArray, contextStr, outcomeStr, originIt
               const speakerActor = messageActor || game.user.character;
               const speakerParams = speakerActor ? { actor: speakerActor } : {};
               
-              await ChatMessage.create({
+              await dRoll.toMessage({
                   speaker: ChatMessage.getSpeaker(speakerParams),
-                  flavor: `<strong>${outcomeLabels[outcomeStr] || "Effect"} Damage!${traitNotice}</strong><br><span style="font-size: 0.9em; color: #555;">Triggered by: ${originItem.name}</span>`,
-                  content: await dRoll.render(),
-                  rolls: [dRoll]
+                  flavor: `<strong>${outcomeLabels[outcomeStr] || "Effect"} Damage!${traitNotice}</strong><br><span style="font-size: 0.9em; color: #555;">Triggered by: ${originItem.name}</span>`
               });
           } catch(e) { console.error("AoE Easy Resolve | Error rolling bonus damage", e); }
       }
   }
 }
 
-// --- INITIALIZATION ---
-// --- INITIALIZATION & CSS INJECTION ---
+
+
+
 Hooks.once("init", async function () {
   console.log(`${MODULE_ID} | Initializing module`);
 
-  // Inject Dynamic State-Aware CSS Animations
+  // --- HEAVY DIAGNOSTIC SOCKET LISTENER (MOVED TO INIT) ---
+  game.socket.on(`module.${MODULE_ID}`, (data) => {
+    console.log(`AoE Easy Resolve | 📡 SOCKET RECEIVED: ${data.action}`, data);
+    
+    if (!game.user.isGM) {
+        console.log(`AoE Easy Resolve | 🛑 Socket Rejected: I am not a GM.`);
+        return; 
+    }
+    
+    const designatedGMId = game.users.activeGM?.id || game.users.find(u => u.isGM && u.active)?.id;
+    if (designatedGMId && game.user.id !== designatedGMId) {
+        console.log(`AoE Easy Resolve | 🛑 Socket Rejected: I am a GM, but not the primary Active GM.`);
+        return; 
+    }
+    
+    console.log(`AoE Easy Resolve | ✅ Socket Accepted! Routing to queue...`);
+    handleSocketPayload(data);
+  });
+
   const style = document.createElement("style");
   style.innerHTML = `
       @keyframes erPulsePlayer {
+
           0% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7); border-color: #3498db; }
           70% { box-shadow: 0 0 0 6px rgba(52, 152, 219, 0); border-color: #2980b9; }
           100% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0); border-color: #3498db; }
@@ -429,20 +626,7 @@ Hooks.once("init", async function () {
   `;
   document.head.appendChild(style);
 
-  if (foundry.data?.regionBehaviors?.RegionBehaviorType) {
-      class AoEControllerBehavior extends foundry.data.regionBehaviors.RegionBehaviorType {
-          static defineSchema() { return {}; }
-          async _handleRegionEvent(event) {
-              if (!game.user.isGM) return; 
-              const uuid = this.parent.region.getFlag(MODULE_ID, "originItemUuid");
-              if (uuid) {
-                  game.modules.get(MODULE_ID).api.handleRegionEvent(event, uuid);
-              }
-          }
-      }
-      CONFIG.RegionBehavior.dataModels[`${MODULE_ID}.controller`] = AoEControllerBehavior;
-      CONFIG.RegionBehavior.typeIcons[`${MODULE_ID}.controller`] = "fas fa-burst";
-  }
+  
 
   game.settings.register(MODULE_ID, "promptUntypedTemplates", {
     name: "Prompt Saves for Manual Templates",
@@ -492,8 +676,9 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
     damageTypeOptions: damageTypeOptions.map(dto => ({ ...dto, selected: r.damageType === dto.key ? "selected" : "" })),
     isAllianceAll: !r.alliance || r.alliance === "all",
     isAllianceEnemy: r.alliance === "enemy",
-    isAllianceAlly: r.alliance === "ally"
-}));
+    isAllianceAlly: r.alliance === "ally",
+    removeOnExit: r.removeOnExit || false // <--- ADD THIS
+  }));
 
 const renderData = {
   ignoreAoE: flags.ignoreAoE || false,
@@ -533,10 +718,10 @@ if (insertTarget.length === 0) insertTarget = $html.find("form");
 insertTarget.append($configHtml);
 
 $configHtml.find(".add-rule-btn").off("click").on("click", async (ev) => {
-    ev.preventDefault();
-    const currentRules = Array.isArray(flags.rules) ? [...flags.rules] : Object.values(flags.rules || {});
-    currentRules.push({ context: "attack", outcome: "criticalSuccess", promptSave: false, trait: "", conditionUuid: "", damageFormula: "", damageType: "", alliance: "all" });
-    await app.item.setFlag(MODULE_ID, "rules", currentRules);
+  ev.preventDefault();
+  const currentRules = Array.isArray(flags.rules) ? [...flags.rules] : Object.values(flags.rules || {});
+  currentRules.push({ context: "attack", outcome: "criticalSuccess", promptSave: false, trait: "", conditionUuid: "", damageFormula: "", damageType: "", alliance: "all", removeOnExit: false }); 
+  await app.item.setFlag(MODULE_ID, "rules", currentRules);
 });
 
 $configHtml.find(".delete-rule-btn").off("click").on("click", async (ev) => {
@@ -552,79 +737,20 @@ if (typeof app._restoreScrollPositions === "function") app._restoreScrollPositio
 // --- CHAT MESSAGE ROUTER & AUTO-APPLY ---
 Hooks.on("createChatMessage", async (message, options, userId) => {
   const flags = message.flags[MODULE_ID];
-  
-  if (flags && flags.isSocketPayload) {
-    if (!game.user.isGM) return;
-    const firstActiveGM = game.users.find(u => u.isGM && u.active);
-    if (!firstActiveGM || game.user.id !== firstActiveGM.id) return;
-
-    const data = flags.payload;
-    window.aoeEasyResolveQueue = window.aoeEasyResolveQueue.then(async () => {
-      try {
-        await message.delete();
-        const targetMessage = game.messages.get(data.messageId);
-        if (!targetMessage) return;
-
-        if (data.action === "updateSaveRoll") {
-          // Strict dot notation prevents Foundry from wiping the nested object
-          await targetMessage.update({ 
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.hasRolled`]: true,
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.rollTotal`]: data.rollTotal,
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.rollFormula`]: data.rollFormula,
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.rollTooltip`]: data.rollTooltip,
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.degreeOfSuccess`]: data.dos,
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.unadjustedDegreeOfSuccess`]: data.unadjustedDos,
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.hasUsedHeroPoint`]: data.hasUsedHeroPoint || false,
-            [`flags.${MODULE_ID}.targets.${data.tokenId}.hasCover`]: data.hasCover || false
-          });
-
-          const aoeData = targetMessage.flags[MODULE_ID];
-          const originItem = await fromUuid(aoeData.itemUuid);
-          const itemHasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
-          
-         
-
-        } else if (data.action === "updateDamageRoll") {
-          await targetMessage.update({
-            [`flags.${MODULE_ID}.damageJSON`]: data.damageJSON, [`flags.${MODULE_ID}.damageTotal`]: data.damageTotal,
-            [`flags.${MODULE_ID}.damageBreakdown`]: data.damageBreakdown, [`flags.${MODULE_ID}.damageFormula`]: data.damageFormula,
-            [`flags.${MODULE_ID}.damageTooltip`]: data.damageTooltip
-          });
-        }
-
-        const freshMessage = game.messages.get(data.messageId);
-        const freshAoeData = freshMessage.flags[MODULE_ID];
-        const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-        const formattedSaveType = freshAoeData.saveType.charAt(0).toUpperCase() + freshAoeData.saveType.slice(1);
-        
-        const newHtmlContent = await renderHBS(templatePath, { 
-          targets: formatTargetsData(freshAoeData.targets), itemName: freshAoeData.itemName,
-          saveType: formattedSaveType, saveDC: freshAoeData.saveDC, damageTotal: freshAoeData.damageTotal,
-          damageBreakdown: freshAoeData.damageBreakdown, damageFormula: freshAoeData.damageFormula,
-          damageTooltip: freshAoeData.damageTooltip, isGM: game.user.isGM
-        });
-        await freshMessage.update({ content: newHtmlContent });
-      } catch (error) { console.error(`${MODULE_ID} | WHISPER ROUTER CRASHED:`, error); }
-    }).catch(err => { console.error(`${MODULE_ID} | Queue encountered an error:`, err); });
-    return;
-  }
 
   if (message.isAuthor) {
     const context = message.flags?.pf2e?.context;
     if (!context) return;
 
-    // --- THE GHOST NET 1: Snatch Stray Saves ---
     if (context.type === "saving-throw") {
         const actor = message.actor;
         if (actor) {
-            // Scan backward for active AoE cards (Safety: ignores cards older than 30 mins)
             const recentAoEMsgs = game.messages.filter(m => {
                 if (Date.now() - m.timestamp > 1800000) return false; 
                 
                 const f = m.flags[MODULE_ID];
                 return f && f.targets && Object.values(f.targets).some(t => {
                     const tok = canvas.tokens.get(t.id);
-                    // Safety: token must not have rolled AND must not have been forcefully applied/skipped by GM
                     return tok && tok.actor?.id === actor.id && !t.hasRolled && !t.hasApplied;
                 });
             }).sort((a, b) => b.timestamp - a.timestamp);
@@ -659,28 +785,33 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
                         let dos = dosMap[finalDosValue] || dosMap[rawDosValue] || "success";
                         let unadjustedDos = rawDosValue !== undefined ? dosMap[rawDosValue] : dos;
 
-                        // Burn the stray message so chat stays clean
                         setTimeout(async () => { try { await message.delete(); } catch(e){} }, 100);
 
-                        // Fire the data payload back into the UI logic
-                        await ChatMessage.create({
-                            whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload (Ghost Net)",
-                            flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: targetMessage.id, tokenId: tokenId, rollTotal: roll.total, rollFormula: roll.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos, hasUsedHeroPoint: false, hasCover: false } } }
-                        });
+  window.aoeEasyResolveRoute("updateSaveRoll", {
+      messageId: targetMessage.id,
+      tokenId: tokenId,
+      rollTotal: roll.total,
+      rollFormula: roll.formula,
+      rollTooltip: rollTooltip,
+      dos: dos,
+      unadjustedDos: unadjustedDos,
+      hasUsedHeroPoint: false,
+      hasCover: false
+  });
+  
+  ui.notifications.info(`AoE Easy Resolve | Intercepted save for ${actor.name}.`);
                         
                         ui.notifications.info(`AoE Easy Resolve | Intercepted save for ${actor.name}.`);
-                        return; // Halt further processing
+                        return; 
                     }
                 }
             }
         }
     }
 
-    // --- THE GHOST NET 2: Snatch Stray Damage Rolls ---
     if (context.type === "damage-roll") {
         const itemUuid = message.item?.uuid || message.flags?.pf2e?.origin?.uuid;
         if (itemUuid) {
-            // Find recent AoE cards (Safety: ignores cards older than 30 mins)
             const recentAoEMsgs = game.messages.filter(m => {
                 if (Date.now() - m.timestamp > 1800000) return false; 
                 
@@ -713,7 +844,6 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
                         dRoll.dice.forEach(d => tooltipParts.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
                     }
                   
-                    // The Modifier Heist: Steal flat damage bonuses from the native PF2e card before deletion
                     if (dmgMsg && dmgMsg.flags?.pf2e?.modifiers) {
                         const mods = dmgMsg.flags.pf2e.modifiers.filter(m => m.enabled && !m.ignored);
                         if (mods.length > 0) {
@@ -737,17 +867,19 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
                     }
                     const damageBreakdown = breakdownArr.length > 0 ? breakdownArr.join(", ") : damageTotal;
 
-                    // Burn the stray message
                     setTimeout(async () => { try { await message.delete(); } catch(e){} }, 100);
 
-                    // Fire the data payload
-                    await ChatMessage.create({
-                        whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload (Ghost Net)",
-                        flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateDamageRoll", messageId: targetMessage.id, damageJSON: damageJSON, damageTotal: damageTotal, damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip } } }
-                    });
+                    window.aoeEasyResolveRoute("updateDamageRoll", {
+                      messageId: targetMessage.id,
+                      damageJSON: damageJSON,
+                      damageTotal: damageTotal,
+                      damageBreakdown: damageBreakdown,
+                      damageFormula: damageFormula,
+                      damageTooltip: damageTooltip
+                  });
                     
                     ui.notifications.info(`AoE Easy Resolve | Intercepted damage roll for ${message.item?.name || "spell"}.`);
-                    return; // Halt further processing
+                    return; 
                 }
             }
         }
@@ -776,7 +908,6 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
   const isTactical = flags.tacticalDrawing || false;
   
   const $html = html instanceof jQuery ? html : $(html);
-// Drop this right at the top of your renderChatMessageHTML hook in aoe-easy-resolve
 $html.find('[data-token-id]').each((i, el) => {
   const $row = $(el);
   const tokenId = $row.attr('data-token-id');
@@ -790,7 +921,6 @@ $html.find('[data-token-id]').each((i, el) => {
       const hasTemplateTools = flags.provideTemplate || isTactical;
       const hasMultiTarget = flags.enableMultiTarget;
 
-      // Only draw the toolbar if at least one feature is explicitly enabled
       if (hasTemplateTools || hasMultiTarget) {
           let buttonsHtml = `<div class="er-template-toolbar" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;">`;
           
@@ -808,7 +938,6 @@ $html.find('[data-token-id]').each((i, el) => {
               `;
           }
           
-          // Strictly isolate the new multi-target button
           if (hasMultiTarget) {
               buttonsHtml += `
                 <button type="button" class="er-resolve-targets-btn" title="Resolve on currently targeted tokens" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-bullseye"></i> Resolve Targets</button>
@@ -963,14 +1092,12 @@ $html.find('[data-token-id]').each((i, el) => {
 
   Hooks.callAll("aoeEasyResolve.renderRow", message, $row, tokenId);
 });
-  // 1. STATE-AWARE PLAYER BEACONS (Roll Save)
   $html.find(".roll-save-btn").each((index, element) => {
     const btn = $(element);
     const tokenId = element.dataset.tokenId;
     const token = canvas.tokens?.get(tokenId);
     const targetData = aoeData.targets[tokenId];
 
-    // If the token hasn't rolled yet, pulse bright blue to draw the player's eye
     if (targetData && !targetData.hasRolled) {
         btn.addClass("er-pulse-player");
     }
@@ -986,12 +1113,9 @@ $html.find('[data-token-id]').each((i, el) => {
     if (!message.isAuthor) $html.find(".roll-damage-btn").hide();
   }
 
-// 2. STATE-AWARE GM BEACONS (Damage & Apply)
 if (isGM || message.isAuthor) {
   (async () => {
     let originItem = item;
-      
-      // The Fix: Check the origin message FIRST to grab the item directly from memory
       if (!originItem && aoeData.originMessageId) {
           const originMsg = game.messages.get(aoeData.originMessageId);
           if (originMsg) originItem = originMsg.item;
@@ -1061,7 +1185,6 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
     }
   } else if (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) {
     
-    // TURN ON THE DAMAGE MUGGER
     window.aoeEasyResolveRollingDamage = true;
     window.aoeEasyResolveDamageRollData = null;
 
@@ -1070,7 +1193,6 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
 
     await originItem.rollDamage(rollOptions);
     
-    // Micro-pause to let the database intercept fire
     await new Promise(resolve => setTimeout(resolve, 50));
     
     if (window.aoeEasyResolveDamageRollData && window.aoeEasyResolveDamageRollData.rolls?.length > 0) {
@@ -1111,7 +1233,6 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
       dRoll.dice.forEach(d => tooltipParts.push(`d${d.faces}: [${d.results.map(r => r.result).join(", ")}]`));
   }
 
-  // Append Flat Modifiers to Tooltip (e.g., Sorcerer Potency)
   if (rollFlags && rollFlags.pf2e?.modifiers) {
       const mods = rollFlags.pf2e.modifiers.filter(m => m.enabled && !m.ignored);
       if (mods.length > 0) {
@@ -1134,36 +1255,14 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
     });
   }
   const damageBreakdown = breakdownArr.length > 0 ? breakdownArr.join(", ") : damageTotal;
-
-  if (game.user.isGM) {
-    await message.update({
-      [`flags.${MODULE_ID}.damageJSON`]: damageJSON, [`flags.${MODULE_ID}.damageTotal`]: damageTotal,
-      [`flags.${MODULE_ID}.damageBreakdown`]: damageBreakdown, [`flags.${MODULE_ID}.damageFormula`]: damageFormula,
-      [`flags.${MODULE_ID}.damageTooltip`]: damageTooltip
-    });
-
-    const freshMessage = game.messages.get(message.id);
-    const freshAoeData = freshMessage.flags[MODULE_ID];
-    const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-    const formattedSaveType = freshAoeData.saveType.charAt(0).toUpperCase() + freshAoeData.saveType.slice(1);
-    
-    const newHtmlContent = await renderHBS(templatePath, { 
-      targets: formatTargetsData(freshAoeData.targets), itemName: freshAoeData.itemName,
-      saveType: formattedSaveType, saveDC: freshAoeData.saveDC, damageTotal: damageTotal,
-      damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip, isGM: game.user.isGM
-    });
-    await freshMessage.update({ content: newHtmlContent });
-  } else {
-    await ChatMessage.create({
-      whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
-      flags: {
-        [MODULE_ID]: {
-          isSocketPayload: true,
-          payload: { action: "updateDamageRoll", messageId: message.id, damageJSON: damageJSON, damageTotal: damageTotal, damageBreakdown: damageBreakdown, damageFormula: damageFormula, damageTooltip: damageTooltip }
-        }
-      }
-    });
-  }
+  window.aoeEasyResolveRoute("updateDamageRoll", {
+    messageId: message.id,
+    damageJSON: damageJSON,
+    damageTotal: damageTotal,
+    damageBreakdown: damageBreakdown,
+    damageFormula: damageFormula,
+    damageTooltip: damageTooltip
+});
 });
 
   $html.find(".roll-all-npcs-btn").off("click").on("click", async (event) => {
@@ -1293,32 +1392,18 @@ if (saveType === "reflex") {
     let dos = finalDosValue !== undefined ? dosMap[finalDosValue] : "success";
     let unadjustedDos = rawDosValue !== undefined ? dosMap[rawDosValue] : dos;
   
-    if (game.user.isGM) {
-      let updatePayload = { hasRolled: true, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, degreeOfSuccess: dos, unadjustedDegreeOfSuccess: unadjustedDos, hasUsedHeroPoint: true, hasCover: false };
-      
-  
-
-      const updateKey = `flags.${MODULE_ID}.targets.${tokenId}`;
-      await message.update({ [updateKey]: updatePayload });
-
-      const freshMessage = game.messages.get(message.id);
-      const freshAoeData = freshMessage.flags[MODULE_ID];
-      const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-      const formattedSaveType = saveType.charAt(0).toUpperCase() + saveType.slice(1);
-      
-      const newHtmlContent = await renderHBS(templatePath, { 
-        targets: formatTargetsData(freshAoeData.targets), itemName: freshAoeData.itemName,
-        saveType: formattedSaveType, saveDC: saveDC, damageTotal: freshAoeData.damageTotal,
-        damageBreakdown: freshAoeData.damageBreakdown, damageFormula: freshAoeData.damageFormula, damageTooltip: freshAoeData.damageTooltip, isGM: game.user.isGM
-      });
-      await freshMessage.update({ content: newHtmlContent });
-    } else {
-      await ChatMessage.create({
-        whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
-        flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos } } }
-      });
-    }
+    window.aoeEasyResolveRoute("updateSaveRoll", {
+      messageId: message.id,
+      tokenId: tokenId,
+      rollTotal: rollResult.total,
+      rollFormula: rollResult.formula,
+      rollTooltip: rollTooltip,
+      dos: dos,
+      unadjustedDos: unadjustedDos,
+      hasUsedHeroPoint: false,
+      hasCover: false
   });
+});
 
   $html.find(".hero-point-btn").off("click").on("click", async (event) => {
     event.preventDefault();
@@ -1402,11 +1487,18 @@ if (saveType === "reflex") {
       });
       await freshMessage.update({ content: newHtmlContent });
     } else {
-      await ChatMessage.create({
-        whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
-        flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: rollResult.total, rollFormula: rollResult.formula, rollTooltip: rollTooltip, dos: dos, unadjustedDos: unadjustedDos, hasUsedHeroPoint: true, hasCover: false } } }
-      });
-    }
+      window.aoeEasyResolveRoute("updateSaveRoll", {
+        messageId: message.id,
+        tokenId: tokenId,
+        rollTotal: rollResult.total,
+        rollFormula: rollResult.formula,
+        rollTooltip: rollTooltip,
+        dos: dos,
+        unadjustedDos: unadjustedDos,
+        hasUsedHeroPoint: true,
+        hasCover: false
+    });
+  }
   });
 // --- RETROACTIVE COVER INJECTION & HANDLER ---
 if (aoeData.saveType === "reflex") {
@@ -1428,7 +1520,6 @@ event.preventDefault();
 const tokenId = event.currentTarget.dataset.tokenId;
 const token = canvas.tokens.get(tokenId);
 
-// Permission Lock: Only GM or Token Owner
 if (!game.user.isGM && (!token || !token.actor?.isOwner)) return;
 
 const freshMessage = game.messages.get(message.id);
@@ -1441,7 +1532,6 @@ const isApplyingCover = !targetData.hasCover;
 const modifier = isApplyingCover ? 2 : -2;
 const newTotal = targetData.rollTotal + modifier;
 
-// Extract original d20 from the tooltip to perfectly recalculate the Degree of Success
 const match = targetData.rollTooltip.match(/d20:\s*(\d+)/);
 const d20 = match ? parseInt(match[1], 10) : 10;
 
@@ -1474,55 +1564,58 @@ if (game.user.isGM) {
   });
   await updatedMessage.update({ content: newHtmlContent });
 } else {
-  await ChatMessage.create({
-    whisper: ChatMessage.getWhisperRecipients("GM"), blind: true, content: "AoE Easy Resolve Data Payload",
-    flags: { [MODULE_ID]: { isSocketPayload: true, payload: { action: "updateSaveRoll", messageId: message.id, tokenId: tokenId, rollTotal: newTotal, rollFormula: targetData.rollFormula, rollTooltip: newTooltip, dos: newDos, unadjustedDos: newDos, hasUsedHeroPoint: targetData.hasUsedHeroPoint, hasCover: isApplyingCover } } }
-  });
+  window.aoeEasyResolveRoute("updateSaveRoll", {
+    messageId: message.id, 
+    tokenId: tokenId, 
+    rollTotal: newTotal, 
+    rollFormula: targetData.rollFormula, 
+    rollTooltip: newTooltip, 
+    dos: newDos, 
+    unadjustedDos: newDos, 
+    hasUsedHeroPoint: targetData.hasUsedHeroPoint, 
+    hasCover: isApplyingCover 
+});
 }
 });
-  $html.find(".step-dos-btn").off("click").on("click", async (event) => {
-    event.preventDefault();
-    if (!game.user.isGM) return; 
+$html.find(".step-dos-btn").off("click").on("click", async (event) => {
+  event.preventDefault();
+  if (!game.user.isGM) return; 
 
-    const tokenId = event.currentTarget.dataset.tokenId;
-    const direction = event.currentTarget.dataset.direction;
-    
-    const freshMessage = game.messages.get(message.id);
-    const aoeData = freshMessage.flags[MODULE_ID];
-    const targetData = aoeData.targets[tokenId];
-    
-    if (!targetData || !targetData.hasRolled) return;
+  const tokenId = event.currentTarget.dataset.tokenId;
+  const direction = event.currentTarget.dataset.direction;
+  
+  const freshMessage = game.messages.get(message.id);
+  const aoeData = freshMessage.flags[MODULE_ID];
+  const targetData = aoeData.targets[tokenId];
+  
+  if (!targetData || !targetData.hasRolled) return;
 
-    const dosOrder = ["criticalFailure", "failure", "success", "criticalSuccess"];
-    let currentIndex = dosOrder.indexOf(targetData.degreeOfSuccess);
-    if (currentIndex === -1) currentIndex = 1; 
+  const dosOrder = ["criticalFailure", "failure", "success", "criticalSuccess"];
+  let currentIndex = dosOrder.indexOf(targetData.degreeOfSuccess);
+  if (currentIndex === -1) currentIndex = 1; 
 
-    if (direction === "up" && currentIndex < 3) currentIndex++;
-    else if (direction === "down" && currentIndex > 0) currentIndex--;
-    else return; 
+  if (direction === "up" && currentIndex < 3) currentIndex++;
+  else if (direction === "down" && currentIndex > 0) currentIndex--;
+  else return; 
 
-    const newDos = dosOrder[currentIndex];
+  const newDos = dosOrder[currentIndex];
 
-    const updateKey = `flags.${MODULE_ID}.targets.${tokenId}.degreeOfSuccess`;
-    await freshMessage.update({ [updateKey]: newDos });
-
-    const updatedMessage = game.messages.get(message.id);
-    const updatedAoeData = updatedMessage.flags[MODULE_ID];
-    const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
-    const formattedSaveType = updatedAoeData.saveType.charAt(0).toUpperCase() + updatedAoeData.saveType.slice(1);
-    
-    const newHtmlContent = await renderHBS(templatePath, { 
-      targets: formatTargetsData(updatedAoeData.targets), itemName: updatedAoeData.itemName,
-      saveType: formattedSaveType, saveDC: updatedAoeData.saveDC, damageTotal: updatedAoeData.damageTotal,
-      damageBreakdown: updatedAoeData.damageBreakdown, damageFormula: updatedAoeData.damageFormula, damageTooltip: updatedAoeData.damageTooltip, isGM: game.user.isGM
-    });
-    await updatedMessage.update({ content: newHtmlContent });
+  window.aoeEasyResolveRoute("updateSaveRoll", {
+      messageId: message.id,
+      tokenId: tokenId,
+      rollTotal: targetData.rollTotal,
+      rollFormula: targetData.rollFormula,
+      rollTooltip: targetData.rollTooltip,
+      dos: newDos,
+      unadjustedDos: targetData.unadjustedDegreeOfSuccess,
+      hasUsedHeroPoint: targetData.hasUsedHeroPoint,
+      hasCover: targetData.hasCover
   });
+});
 
   $html.find(".apply-damage-btn").off("click").on("click", async (event) => {
     event.preventDefault();
     
-    // UI Hard Lock to prevent double-clicks instantly
     const $btn = $(event.currentTarget);
     if ($btn.prop("disabled")) return;
     $btn.prop("disabled", true).html('<i class="fas fa-spinner fa-spin"></i> Processing...');
@@ -1574,7 +1667,6 @@ if (game.user.isGM) {
             if (!token || !token.actor) continue;
             if (targetData.hasApplied) continue; 
 
-            // FIX: Ensure active token is logged so the Mugger catches dying mobs
             window.aoeEasyResolveApplying.activeSaveNote = ""; 
             window.aoeEasyResolveApplying.activeTokenId = tokenId;
 
@@ -1584,7 +1676,6 @@ if (game.user.isGM) {
             let isVoid = itemTraits.includes("void") || itemTraits.includes("negative");
             const isHealingTrait = itemTraits.includes("healing");
 
-            // FIX: Smart Identifier using .includes to catch variants (Necrotic Blast, etc.)
             const cardItemName = aoeData.itemName || originItem?.name || "";
             const isBomb = cardItemName.includes("Necrotic Bomb") || cardItemName.includes("Necrotic Blast");
             const isHarm = cardItemName === "Harm" || cardItemName.includes("Harm");
@@ -1637,7 +1728,9 @@ if (game.user.isGM) {
             if (effectType === "none") { 
               window.aoeEasyResolveApplying.receipt.push({
                   tokenId: tokenId, speaker: { alias: token.name }, img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
-                  content: `<span style="font-weight: bold; color: #888;">Immune. Takes no damage.</span>`, saveNote: "Target is Immune"
+                  content: `<span style="font-weight: bold; color: #888;">Immune. Takes no damage.</span>`, saveNote: "Target is Immune",
+                  forensics: { valueTotal: 0, isHealing: false, mitigatedTotal: 0, isKill: false }
+                  
               });
               processedCount++; 
               msgUpdates[`flags.${MODULE_ID}.targets.${tokenId}.hasApplied`] = true; 
@@ -1696,7 +1789,8 @@ if (game.user.isGM) {
                   
                   window.aoeEasyResolveApplying.receipt.push({
                       tokenId: tokenId, speaker: { alias: token.name }, img: token.document.texture.src,
-                      content: `<span style="color: #4ade80; font-weight: bold; text-shadow: 1px 1px 2px black;">Recovered ${actualHealed} HP</span>`, saveNote: "Healing Applied"
+                      content: `<span style="color: #4ade80; font-weight: bold; text-shadow: 1px 1px 2px black;">Recovered ${actualHealed} HP</span>`, saveNote: "Healing Applied",
+                      forensics: { valueTotal: actualHealed, isHealing: true, mitigatedTotal: 0, isKill: false }
                   });
 
                 } else {
@@ -1708,7 +1802,7 @@ if (game.user.isGM) {
                       let formulaParts = [];
                       if (pf2eDamageRoll.instances) {
                         for (const inst of pf2eDamageRoll.instances) {
-                          const isPersistent = inst.persistent || inst.category === "persistent" || inst.options?.includes("persistent");
+                          const isPersistent = inst.persistent || inst.category === "persistent" || inst.options?.has?.("persistent") || inst.options?.includes?.("persistent");
                           const flavor = overrideType || inst.type || "untyped";
 
                           if (isPersistent) {
@@ -1725,21 +1819,27 @@ if (game.user.isGM) {
                         }
                       }
                       if (formulaParts.length > 0) {
-                        damageToApply = await new pf2eDamageClass(formulaParts.join(", ")).evaluate({async: true});
+                        
+                        damageToApply = await new pf2eDamageClass(formulaParts.join(", ")).evaluate();
                       }
                     } catch (e) { console.warn("AoE Easy Resolve | Failed to rebuild scaled DamageRoll.", e); }
                   } 
                   
-                  // FIX: Bypass frozen properties by fully rebuilding string
+                  if (!damageToApply) {
+                      const fallbackTotal = Math.floor((aoeData.damageTotal || 0) * multiplier);
+                      const fallbackFlavor = overrideType || "untyped";
+                      damageToApply = await new pf2eDamageClass(`${fallbackTotal}[${fallbackFlavor}]`).evaluate();
+                  }
+
+                  const immediateTotal = damageToApply.total || 0;
+                  
                   if (!damageToApply) {
                       const fallbackTotal = Math.floor((aoeData.damageTotal || 0) * multiplier);
                       const fallbackFlavor = overrideType || "untyped";
                       damageToApply = await new pf2eDamageClass(`${fallbackTotal}[${fallbackFlavor}]`).evaluate({async: true});
                   }
 
-                  const immediateTotal = damageToApply.total || 0;
-
-                  // 1. APPLY IMMEDIATE DAMAGE
+                 
                   if (immediateTotal > 0 || (immediateTotal === 0 && appliedPersistent.length === 0)) {
                       let extraTraits = new Set();
                       if (aoeData.templateId || aoeFlags.isAreaDamage) {
@@ -1758,19 +1858,18 @@ if (game.user.isGM) {
                           const currentHP = token.actor.system.attributes.hp.value;
                           await token.actor.update({ "system.attributes.hp.value": Math.max(0, currentHP - immediateTotal) });
                           
-                          // FIX: FORCE IT ONTO THE RECEIPT SO DYING TOKENS DON'T VANISH WHEN APPLYDAMAGE CRASHES
                           window.aoeEasyResolveApplying.receipt.push({
                               tokenId: tokenId,
                               speaker: { alias: token.name },
                               img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
                               content: `<span style="color: #ff8c00; font-weight: bold;">Took ${immediateTotal} Damage (Fallback)</span>`,
-                              saveNote: window.aoeEasyResolveApplying.activeSaveNote
+                              saveNote: window.aoeEasyResolveApplying.activeSaveNote,
+                              forensics: { valueTotal: immediateTotal, isHealing: false, mitigatedTotal: 0, isKill: false }
                           });
                         } catch (fallbackError) { }
                       }
                   }
 
-                  // 2. APPLY PERSISTENT CONDITIONS
                   if (appliedPersistent.length > 0) {
                       for (const p of appliedPersistent) {
                           try {
@@ -1788,7 +1887,8 @@ if (game.user.isGM) {
                           window.aoeEasyResolveApplying.receipt.push({
                               tokenId: tokenId, speaker: { alias: token.name }, img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
                               content: `<span style="font-weight: bold; color: #ff6b6b;">Takes Persistent Damage</span>`,
-                              saveNote: `${window.aoeEasyResolveApplying.activeSaveNote}<br><span style="color:#ff6b6b">Persistent:</span> ${pStrings.join(", ")}`
+                              saveNote: `${window.aoeEasyResolveApplying.activeSaveNote}<br><span style="color:#ff6b6b">Persistent:</span> ${pStrings.join(", ")}`,
+                              forensics: { valueTotal: immediateTotal, isHealing: false, mitigatedTotal: 0, isKill: false }
                           });
                       }
                   }
@@ -1796,7 +1896,8 @@ if (game.user.isGM) {
               } else {
                 window.aoeEasyResolveApplying.receipt.push({
                     tokenId: tokenId, speaker: { alias: token.name }, img: token.document?.texture?.src || "icons/svg/mystery-man.svg",
-                    content: `<span style="font-weight: bold; color: #888;">Takes no damage.</span>`, saveNote: window.aoeEasyResolveApplying.activeSaveNote || "Complete Mitigation"
+                    content: `<span style="font-weight: bold; color: #888;">Takes no damage.</span>`, saveNote: window.aoeEasyResolveApplying.activeSaveNote || "Complete Mitigation",
+                    forensics: { valueTotal: 0, isHealing: false, mitigatedTotal: 0, isKill: false }
                 });
               }
             }
@@ -1893,14 +1994,32 @@ if (game.user.isGM) {
           }
           receiptHtml += `</div></div>`;
 
-          await ChatMessage.create({
-              speaker: ChatMessage.getSpeaker(),
-              content: receiptHtml
-          });
+          let parserData = receiptList.map(entry => {
+            return {
+                tokenId: entry.tokenId,
+                targetName: entry.speaker?.alias || "Unknown",
+                valueTotal: entry.forensics?.valueTotal || 0,
+                isHealing: entry.forensics?.isHealing || false,
+                mitigatedTotal: entry.forensics?.mitigatedTotal || 0,
+                isKill: entry.forensics?.isKill || false
+            };
+        });
+
+        await ChatMessage.create({
+            speaker: ChatMessage.getSpeaker(),
+            content: receiptHtml,
+            flags: {
+                [MODULE_ID]: {
+                    isResolutionSummary: true,
+                    actionName: title,
+                    origin: originItem ? originItem.uuid : null,
+                    parsedResults: parserData
+                }
+            }
+        });
       }
     }
     
-    // The Data Refresh: Update the flags, then completely re-render the HTML to lock the visual state
     if (Object.keys(msgUpdates).length > 0) {
         await freshMessage.update(msgUpdates);
         
@@ -1925,7 +2044,6 @@ if (game.user.isGM) {
       ui.notifications.warn("AoE Easy Resolve | All valid targets have already been processed.");
     }
 
-    // The Board Janitor: Check for both Regions and standard Templates
     if (game.user.isGM && aoeData.templateId) {
         let boardDoc = canvas.scene.templates?.get(aoeData.templateId) || canvas.scene.regions?.get(aoeData.templateId);
         if (boardDoc) {
@@ -1954,7 +2072,6 @@ if (game.user.isGM) {
   });
 });
 
-// --- VISUAL GHOST GENERATOR ---
 async function createVisualGhost(scene, regionDoc, color) {
   if (regionDoc.getFlag(MODULE_ID, "ghostDrawingIds")) return;
 
@@ -2068,14 +2185,12 @@ async function createVisualBurst(doc, colorHex) {
 
       const particles = [];
 
-      // Micro-factory for varied, lingering bubbles
       const createParticle = (isEdge) => {
           const p = new PIXI.Graphics();
           
           p.beginFill(numericColor, 0.6);
           p.lineStyle(1, numericColor, 1);
           
-          // Extreme size variance: 20% chance for a massive bubble, 80% for smaller motes
           const isChonky = Math.random() > 0.8;
           const size = isChonky ? Math.random() * 8 + 6 : Math.random() * 3 + 2; 
           p.drawCircle(0, 0, size);
@@ -2083,22 +2198,20 @@ async function createVisualBurst(doc, colorHex) {
           
           let angle = Math.random() * Math.PI * 2;
           let speed, px, py, vx, vy;
-          // Massive lifespan boost: 180 to 300 frames (roughly 3 to 5 seconds)
           let life = Math.random() * 120 + 180; 
 
           if (isEdge) {
-              // Spawn on perimeter
               px = Math.cos(angle) * radiusPixels;
               py = Math.sin(angle) * radiusPixels;
               let tangent = angle + Math.PI / 2;
-              speed = Math.random() * 1.5 + 0.5; // Slightly slower initial launch
+              speed = Math.random() * 1.5 + 0.5; 
               vx = Math.cos(tangent) * speed;
               vy = Math.sin(tangent) * speed;
           } else {
               // Spawn near center
               px = (Math.random() - 0.5) * (radiusPixels * 0.4);
               py = (Math.random() - 0.5) * (radiusPixels * 0.4);
-              speed = Math.random() * (radiusPixels / 25) + 0.5; // Gentler radial pop
+              speed = Math.random() * (radiusPixels / 25) + 0.5; 
               vx = Math.cos(angle) * speed;
               vy = Math.sin(angle) * speed;
           }
@@ -2110,22 +2223,18 @@ async function createVisualBurst(doc, colorHex) {
           return { gfx: p, vx, vy, life, maxLife: life };
       };
 
-      // 50 edge dancers, 50 interior bubbles
       for(let i=0; i<50; i++) particles.push(createParticle(true));
       for(let i=0; i<50; i++) particles.push(createParticle(false));
 
-      // Keep the anchor ring, extended life to match
       const ring = new PIXI.Graphics();
       ring.lineStyle(4, numericColor, 0.8);
       ring.drawCircle(0, 0, radiusPixels);
       container.addChild(ring);
       let ringLife = 90; 
 
-      // The Physics Loop
       const animateParticles = () => {
           let allDead = true;
 
-          // Expand and fade the anchor ring
           if (ringLife > 0) {
               ringLife--;
               ring.alpha = ringLife / 90;
@@ -2133,7 +2242,6 @@ async function createVisualBurst(doc, colorHex) {
               allDead = false;
           }
 
-          // Drift and fade the bubbles
           for (let i = particles.length - 1; i >= 0; i--) {
               let p = particles[i];
               if (p.life > 0) {
@@ -2142,7 +2250,6 @@ async function createVisualBurst(doc, colorHex) {
                   p.gfx.x += p.vx;
                   p.gfx.y += p.vy;
                   
-                  // Lighter friction so they drift lazily for their entire lifespan
                   p.vx *= 0.98;
                   p.vy *= 0.98;
 
@@ -2168,6 +2275,7 @@ async function createVisualBurst(doc, colorHex) {
   }
 }
 
+// --- TEMPLATE CONVERSION ENGINE ---
 async function generateTemplateCard(doc, cfg) {
   try {
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -2176,15 +2284,17 @@ async function generateTemplateCard(doc, cfg) {
       const persistentRules = rules.filter(r => ["tokenEnter", "tokenExit", "tokenMove", "turnStart", "turnEnd"].includes(r.context));
 
       const eventMapping = {
-          "tokenEnter": ["tokenMoveIn"],
-          "tokenExit": ["tokenMoveOut"],
-          "tokenMove": ["tokenMoveWithin"],
-          "turnStart": ["turnStart", "tokenTurnStart"],
-          "turnEnd": ["turnEnd", "tokenTurnEnd"]
-      };
-      const subscribedEvents = [...new Set(persistentRules.flatMap(r => eventMapping[r.context] || []))];
-
-      // --- FORCED CONVERTER ---
+        "tokenEnter": ["tokenEnter"],
+        "tokenExit": ["tokenExit"],
+        "tokenMove": ["tokenMove"],
+        "turnStart": ["turnStart", "tokenTurnStart"],
+        "turnEnd": ["turnEnd", "tokenTurnEnd"]
+    };
+    
+    const subscribedEvents = [...new Set(persistentRules.flatMap(r => eventMapping[r.context] || []))];
+      if (persistentRules.some(r => r.removeOnExit)) {
+        if (!subscribedEvents.includes("tokenExit")) subscribedEvents.push("tokenExit");
+    }
       if (doc && doc.documentName === "MeasuredTemplate" && persistentRules.length > 0) {
           let regionShapes = [];
           const distance = doc.distance || 15;
@@ -2202,83 +2312,109 @@ async function generateTemplateCard(doc, cfg) {
           }
 
           if (regionShapes.length > 0) {
-              const behaviorData = {
-                  name: `AoE Easy Resolve Controller`,
-                  type: `executeScript`,
-                  system: {
-                      events: subscribedEvents,
-                      source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
-                  }
-              };
+            const behaviorData = {
+              name: `AoE Easy Resolve Controller`,
+              type: `executeScript`,
+              system: {
+                  events: subscribedEvents,
+                  source: `if (!game.user.isGM) return;\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
+              }
+          };
 
-              const regionData = {
-                  name: `${cfg.itemName} (AoE Hazard)`,
-                  color: game.user.color,
-                  shapes: regionShapes,
-                  elevation: { bottom: -1000, top: 1000 }, 
-                  behaviors: [behaviorData],
-                  flags: { 
-                      [MODULE_ID]: { 
-                          isAoERegion: true, 
-                          originItemUuid: cfg.originItem.uuid, 
-                          persistentRules: persistentRules,
-                          saveDC: cfg.saveDC, 
-                          duration: cfg.hazardDuration || null
-                      } 
-                  }
-              };
+          const regionData = {
+            name: `${cfg.itemName} (AoE Hazard)`,
+            color: game.user.color,
+            shapes: regionShapes,
+            elevation: { bottom: -1000, top: 1000 }, 
+            behaviors: [behaviorData],
+            flags: { 
+                [MODULE_ID]: { 
+                    isAoERegion: true, 
+                    originItemUuid: cfg.originItem.uuid, 
+                    persistentRules: persistentRules,
+                    saveDC: cfg.saveDC, 
+                    duration: cfg.hazardDuration || null,
+                    templateData: { x: doc.x, y: doc.y, distance: doc.distance, t: doc.t }
+                } 
+            }
+        };
 
-              const newRegions = await canvas.scene.createEmbeddedDocuments("Region", [regionData]);
-              await doc.delete(); 
-              doc = newRegions[0]; 
-              await new Promise(resolve => setTimeout(resolve, 200)); 
-              
-              await createVisualGhost(canvas.scene, doc, game.user.color);
-          }
-      } else if (doc && doc.documentName === "Region" && persistentRules.length > 0) {
-          await doc.update({
-              [`flags.${MODULE_ID}.isAoERegion`]: true,
-              [`flags.${MODULE_ID}.originItemUuid`]: cfg.originItem.uuid,
-              [`flags.${MODULE_ID}.persistentRules`]: persistentRules,
-              [`flags.${MODULE_ID}.saveDC`]: cfg.saveDC,
-              [`flags.${MODULE_ID}.duration`]: cfg.hazardDuration || null
-          });
-
-          const hasBehavior = doc.behaviors?.some(b => b.name === `AoE Easy Resolve Controller`);
-          if (!hasBehavior) {
-              await doc.createEmbeddedDocuments("RegionBehavior", [{
-                  name: `AoE Easy Resolve Controller`,
-                  type: `executeScript`,
-                  system: {
-                      events: subscribedEvents,
-                      source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
-                  }
-              }]);
-          }
+        if (game.user.isGM) {
+          const newRegions = await canvas.scene.createEmbeddedDocuments("Region", [regionData]);
+          await doc.delete(); 
+          doc = newRegions[0]; 
+          await new Promise(resolve => setTimeout(resolve, 200)); 
           
           await createVisualGhost(canvas.scene, doc, game.user.color);
+      } else {
+
+          window.aoeEasyResolveRoute("createRegion", {
+              sceneId: canvas.scene.id,
+              templateId: doc.id,
+              regionData: regionData,
+              userColor: game.user.color
+          });
+      }
+  }
+      } else if (doc && doc.documentName === "Region" && persistentRules.length > 0) {
+          if (game.user.isGM) {
+              await doc.update({
+                  [`flags.${MODULE_ID}.isAoERegion`]: true,
+                  [`flags.${MODULE_ID}.originItemUuid`]: cfg.originItem.uuid,
+                  [`flags.${MODULE_ID}.persistentRules`]: persistentRules,
+                  [`flags.${MODULE_ID}.saveDC`]: cfg.saveDC,
+                  [`flags.${MODULE_ID}.duration`]: cfg.hazardDuration || null
+              });
+
+              const hasBehavior = doc.behaviors?.some(b => b.name === `AoE Easy Resolve Controller`);
+              if (!hasBehavior) {
+                  await doc.createEmbeddedDocuments("RegionBehavior", [{
+                      name: `AoE Easy Resolve Controller`,
+                      type: `executeScript`,
+                      system: {
+                          events: subscribedEvents,
+                          source: `console.log('AoE Easy Resolve | Region Behavior Script Firing!', event);\nif (game.modules.get('${MODULE_ID}')?.api?.handleRegionEvent) {\n  game.modules.get('${MODULE_ID}').api.handleRegionEvent(event, '${cfg.originItem.uuid}');\n}`
+                      }
+                  }]);
+              }
+              
+              await createVisualGhost(canvas.scene, doc, game.user.color);
+            } else {
+              window.aoeEasyResolveRoute("updateRegion", {
+                  sceneId: canvas.scene.id,
+                  regionId: doc.id,
+                  originItemUuid: cfg.originItem.uuid,
+                  persistentRules: persistentRules,
+                  saveDC: cfg.saveDC,
+                  hazardDuration: cfg.hazardDuration || null,
+                  userColor: game.user.color,
+                  subscribedEvents: subscribedEvents
+              });
+          }
       }
 
       let targetedTokens = [];
-      // 1. Uncouple the target fetcher
+
       if (doc && doc.documentName === "Region") {
-          if (doc.tokens && doc.tokens.size > 0) {
-              targetedTokens = Array.from(doc.tokens);
-          } else {
-              targetedTokens = canvas.tokens.placeables.filter(token => {
-                  if (typeof doc.testPoint === "function") {
-                      return doc.testPoint({ x: token.center.x, y: token.center.y, elevation: token.document.elevation });
-                  } else if (doc.object && doc.object.shape) {
-                      return doc.object.shape.contains(token.center.x - doc.x, token.center.y - doc.y);
-                  }
-                  return false;
-              });
-          }
+          await new Promise(resolve => setTimeout(resolve, 250));
+          const regionObj = doc.object || canvas.regions.get(doc.id);
+          
+          targetedTokens = canvas.tokens.placeables.filter(t => {
+              if (regionObj && typeof regionObj.testPoint === "function") {
+                  return regionObj.testPoint(t.center, t.document.elevation);
+              }
+              return false;
+          });
       } else if (doc && doc.documentName === "MeasuredTemplate") {
-          const templateObj = doc.object;
-          if (templateObj && templateObj.shape) {
-              targetedTokens = canvas.tokens.placeables.filter(token => templateObj.shape.contains(token.center.x - doc.x, token.center.y - doc.y));
-          }
+          await new Promise(resolve => setTimeout(resolve, 250));
+          
+          targetedTokens = canvas.tokens.placeables.filter(t => {
+              const templateObj = doc.object || canvas.templates.get(doc.id);
+              if (templateObj && templateObj.shape) {
+                  return templateObj.shape.contains(t.center.x - doc.x, t.center.y - doc.y);
+              }
+              return false;
+          });
       } else if (cfg.preselectedTargets) {
           targetedTokens = cfg.preselectedTargets;
       }
@@ -2294,7 +2430,6 @@ async function generateTemplateCard(doc, cfg) {
           return; 
       }
 
-      // 2. Multi-ping routing
       if (doc) {
           createVisualBurst(doc, game.user.color);
       } else if (cfg.preselectedTargets) {
@@ -2361,7 +2496,6 @@ async function generateTemplateCard(doc, cfg) {
       const casterAlliance = cfg.originItem?.actor?.alliance || "party";
 
       const targetsData = {};
-
       targetedTokens.forEach(t => {
           const negativeHealing = t.actor?.system?.attributes?.hp?.negativeHealing || false;
           let effectType = "standard";
@@ -2372,7 +2506,6 @@ async function generateTemplateCard(doc, cfg) {
 
           if (effectType === "standard" && cfg.hazardDamage && cfg.hazardDamage.includes("healing")) effectType = negativeHealing ? "none" : "heal";
 
-          // Enforce Split Matrix
           const targetAlliance = t.actor?.alliance;
           const isAlly = targetAlliance === casterAlliance;
           const forcedEffect = isAlly ? allyBaseEffect : enemyBaseEffect;
@@ -2387,7 +2520,7 @@ async function generateTemplateCard(doc, cfg) {
           };
       });
 
-     // --- INTERCEPTOR: PRE-RENDER ---
+      // --- INTERCEPTOR: PRE-RENDER ---
       let payload = {
           targets: targetsData,
           originItem: cfg.originItem,
@@ -2398,8 +2531,8 @@ async function generateTemplateCard(doc, cfg) {
           caster: cfg.originItem?.actor
       };
       
-      payload = await game.modules.get(MODULE_ID).api.runInterceptors("preRenderCard", payload);
-      
+      payload = await game.modules.get(MODULE_ID).api.runInterceptors("preRenderCard", payload) || payload;
+
       const templatePath = `modules/${MODULE_ID}/templates/chat-card.hbs`;
       const formattedSaveType = payload.saveType.charAt(0).toUpperCase() + payload.saveType.slice(1);
       
@@ -2429,7 +2562,6 @@ const executeShapeProcessing = async (doc) => {
       let cache = window.aoeEasyResolveCache;
       window.aoeEasyResolveCache = null; 
 
-      // THE SMART FALLBACK: Scrape the native PF2e database flags if UI cache missed
       if (!cache && doc.flags?.pf2e?.origin?.uuid) {
           const originItem = await fromUuid(doc.flags.pf2e.origin.uuid);
           if (originItem) {
@@ -2454,7 +2586,6 @@ const executeShapeProcessing = async (doc) => {
       if (originItem) {
         if (originItem.getFlag(MODULE_ID, "ignoreAoE")) return;
 
-        // THE FIREWALL: Did you configure this, OR is it a native combat spell?
         const aoeFlags = originItem.flags?.[MODULE_ID] || {};
         const hasNativeSave = !!(originItem.system?.defense?.save?.statistic);
         const hasNativeDamage = !!(originItem.system?.damage && Object.keys(originItem.system.damage).length > 0);
@@ -2467,8 +2598,6 @@ const executeShapeProcessing = async (doc) => {
                              aoeFlags.isAreaDamage ||
                              hasNativeSave ||
                              hasNativeDamage;
-
-        // If the spell is completely naked (no custom config, no native save, no native damage), abort the hijack.
         if (!isConfigured) {
             console.log("AoE Easy Resolve | Spell is an unconfigured utility. Ignoring template.");
             return;
@@ -2508,22 +2637,42 @@ const executeShapeProcessing = async (doc) => {
   }, 150);
 };
 Hooks.on("createRegion", (doc, options, userId) => {
-  if (game.user.id === userId) executeShapeProcessing(doc);
+  if (game.user.id !== userId) return;
+  if (doc.getFlag(MODULE_ID, "isAoERegion")) return; 
+  executeShapeProcessing(doc);
 });
 
 Hooks.on("createMeasuredTemplate", (doc, options, userId) => {
   if (game.user.id !== userId) return;
-  if (doc.flags?.pf2e) return; 
   executeShapeProcessing(doc);
 });
 
-// --- GHOST CLEANUP ENGINE ---
 Hooks.on("deleteRegion", async (doc, options, userId) => {
   if (game.user.id !== userId) return;
+  
   const ghostIds = doc.getFlag(MODULE_ID, "ghostDrawingIds");
   if (ghostIds && ghostIds.length > 0) {
       try {
           await doc.parent.deleteEmbeddedDocuments("Drawing", ghostIds);
       } catch(e) { console.error("AoE Easy Resolve | Failed to clean up ghost drawings.", e); }
   }
+
+  setTimeout(async () => {
+      const allTokens = doc.parent.tokens.contents;
+      for (let t of allTokens) {
+          if (!t.actor) continue;
+          
+          const effectsToDelete = t.actor.items.filter(i => 
+              (i.type === "effect" || i.type === "condition") && 
+              i.getFlag(MODULE_ID, "originRegion") === doc.id
+          ).map(i => i.id);
+
+          if (effectsToDelete.length > 0) {
+              try {
+                  await t.actor.deleteEmbeddedDocuments("Item", effectsToDelete);
+                  console.log(`AoE Easy Resolve | Region expired. Swept ${effectsToDelete.length} orphaned effects from ${t.name}.`);
+              } catch(e) {}
+          }
+      }
+  }, 100);
 });

@@ -193,6 +193,10 @@
         <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.conditionUuid" value="{{rule.conditionUuid}}" placeholder="Compendium.pf2e...">
       </div>
     </div>
+    <label style="display: flex; align-items: center; gap: 4px; font-size: 0.9em; margin-top: 4px;">
+        <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.removeOnExit" {{checked rule.removeOnExit}}>
+        Remove on Exit
+    </label>
     <div class="form-group">
         <label>Prompt Reactive Save?</label>
         <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.promptSave" {{#if rule.promptSave}}checked{{/if}}>
