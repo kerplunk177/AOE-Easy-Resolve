@@ -370,6 +370,33 @@ Hooks.on("updateCombat", async (combat, change, options, userId) => {
 });
 
 // --- HELPER FUNCTIONS ---
+function compileHeightenedDamage(item, baseDmg, scaleDmg, scaleMode, castLevel) {
+  let formula = baseDmg || "0";
+  if (!scaleDmg || scaleMode === "none" || !item || !item.actor) return formula;
+
+  const actor = item.actor;
+  let multiplier = 0;
+
+  if (scaleMode === "spellRank") {
+      const baseRank = item.system?.level?.value || 1;
+      const actualRank = parseInt(castLevel) || baseRank;
+      multiplier = Math.max(0, actualRank - baseRank);
+  } 
+  else if (scaleMode === "actorLevel") {
+      multiplier = parseInt(actor.level ?? actor.system?.details?.level?.value ?? 0) || 0;
+  } 
+  else if (scaleMode === "cantrip") {
+      const lvl = parseInt(actor.level ?? actor.system?.details?.level?.value ?? 0) || 1;
+      // PF2e Cantrips heighten at half your level rounded up. Rank 1 is base, so we subtract 1.
+      multiplier = Math.max(0, Math.ceil(lvl / 2) - 1);
+  }
+
+  if (multiplier > 0) {
+      formula = `${formula} + (${multiplier} * (${scaleDmg}))`;
+  }
+  return formula;
+}
+
 function getUnadjustedDos(total, dc, d20) {
   if (dc === undefined || dc === null) return undefined;
   let dos = 1; 
@@ -410,7 +437,64 @@ function buildRollTooltip(actor, saveType, rollResult, d20, modifier) {
   }
   return fallback;
 }
+function getSystemSaveDC(item, dcType, customDC) {
+  if (!item || !item.actor) return parseInt(customDC) || null;
+  const actor = item.actor;
 
+  // Fast exit if they selected Custom
+  if (!dcType || dcType === "custom") return parseInt(customDC) || null;
+
+  let maxClassDC = 0;
+  let maxSpellDC = 0;
+
+  // 1. Scrape Class DC
+  if (actor.system?.attributes?.classDC?.value) {
+      let val = parseInt(actor.system.attributes.classDC.value) || 0;
+      if (val > maxClassDC) maxClassDC = val;
+  }
+  if (actor.classDC?.dc?.value) {
+      let val = parseInt(actor.classDC.dc.value) || 0;
+      if (val > maxClassDC) maxClassDC = val;
+  }
+  if (actor.classDCs) {
+      for (let key in actor.classDCs) {
+          let val = parseInt(actor.classDCs[key]?.dc?.value) || 0;
+          if (val > maxClassDC) maxClassDC = val;
+      }
+  }
+
+  // 2. Scrape Spell DC
+  if (actor.spellcasting) {
+      let scEntries = [];
+      if (Array.isArray(actor.spellcasting)) scEntries = actor.spellcasting;
+      else if (actor.spellcasting.contents) scEntries = actor.spellcasting.contents;
+      else if (typeof actor.spellcasting.values === 'function') scEntries = Array.from(actor.spellcasting.values());
+      else scEntries = Object.values(actor.spellcasting);
+
+      scEntries.forEach(sc => {
+          let val = parseInt(sc.statistic?.dc?.value || sc.system?.spelldc?.dc) || 0;
+          if (val > maxSpellDC) maxSpellDC = val;
+      });
+  }
+
+  // 3. The Bulletproof IF/ELSE (No Math.max allowed)
+  let highestDC = 0;
+  if (maxClassDC > maxSpellDC) {
+      highestDC = maxClassDC;
+  } else {
+      highestDC = maxSpellDC;
+  }
+
+  // 4. The Absolute Bottom Fallback
+  const fallbackLevel = 10 + parseInt(actor.level ?? actor.system?.details?.level?.value ?? 0);
+
+  // 5. Final Output Router
+  if (dcType === "spell") return maxSpellDC > 0 ? maxSpellDC : fallbackLevel;
+  if (dcType === "class") return maxClassDC > 0 ? maxClassDC : fallbackLevel;
+  if (dcType === "highest") return highestDC > 0 ? highestDC : fallbackLevel;
+
+  return parseInt(customDC) || null;
+}
 function formatTargetsData(targetsObj) {
   const dosMap = {
     "criticalSuccess": { label: "Crit Success", color: "#008000" },
@@ -441,7 +525,7 @@ async function generateReactiveSaveCard(tokenDoc, originItem, regionDoc) {
   const saveType = flags.useOverride ? flags.saveType : (originItem.system?.defense?.save?.statistic || "reflex");
   
   let saveDC = regionFlags.saveDC || null;
-  if (!saveDC) saveDC = flags.useOverride ? flags.saveDC : (originItem.system?.defense?.save?.dc?.value || null);
+  if (!saveDC) saveDC = flags.useOverride ? resolveDynamicData(flags.saveDC, originItem) : (originItem.system?.defense?.save?.dc?.value || null);
   
   const isBasicSave = originItem.system?.defense?.save?.basic ?? true;
 
@@ -556,11 +640,13 @@ async function executeEffectRules(targetsArray, contextStr, outcomeStr, originIt
       }
 
       if (rule.damageFormula) {
-          try {
-              const formula = rule.damageType ? `(${rule.damageFormula})[${rule.damageType}]` : rule.damageFormula;
-              const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
-              
-              const dRoll = await new pf2eDamageClass(formula).evaluate();
+        try {
+            const rollData = originItem ? originItem.getRollData() : {};
+            const parsedFormula = Roll.replaceFormulaData(rule.damageFormula, rollData);
+            const formula = rule.damageType ? `(${parsedFormula})[${rule.damageType}]` : parsedFormula;
+            const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
+            
+            const dRoll = await new pf2eDamageClass(formula, rollData).evaluate();
 
               const outcomeLabels = { criticalSuccess: "Critical", success: "Hit/Success", failure: "Miss/Failure", criticalFailure: "Critical Miss", always: "Persistent" };
               const traitNotice = rule.trait ? ` (vs ${rule.trait})` : "";
@@ -695,7 +781,19 @@ const renderData = {
   isReflex: flags.saveType === "reflex" || !flags.saveType,
   isWill: flags.saveType === "will",
   saveDC: flags.saveDC || "",
+  dcType: flags.dcType || "custom",
+  isCustomDC: !flags.dcType || flags.dcType === "custom",
+  isClassDC: flags.dcType === "class",
+  isSpellDC: flags.dcType === "spell",
+  isHighestDC: flags.dcType === "highest",
   useCustomDamage: flags.useCustomDamage || false,
+  baseDamage: flags.baseDamage || flags.customDamage || "", 
+  scaleDamage: flags.scaleDamage || "",
+  scaleMode: flags.scaleMode || "none",
+  scaleNone: !flags.scaleMode || flags.scaleMode === "none",
+  scaleSpellRank: flags.scaleMode === "spellRank",
+  scaleActorLevel: flags.scaleMode === "actorLevel",
+  scaleCantrip: flags.scaleMode === "cantrip",
   customDamage: flags.customDamage || "",
   hazardDuration: flags.hazardDuration || "",
   tacticalDrawing: flags.tacticalDrawing || false,
@@ -723,7 +821,19 @@ $configHtml.find(".add-rule-btn").off("click").on("click", async (ev) => {
   currentRules.push({ context: "attack", outcome: "criticalSuccess", promptSave: false, trait: "", conditionUuid: "", damageFormula: "", damageType: "", alliance: "all", removeOnExit: false }); 
   await app.item.setFlag(MODULE_ID, "rules", currentRules);
 });
-
+$configHtml.find(".er-dc-quick-select").off("change").on("change", (ev) => {
+  ev.preventDefault();
+  const selectedFormula = $(ev.currentTarget).val();
+  
+  if (selectedFormula) {
+      const $input = $configHtml.find(`input[name="flags.${MODULE_ID}.saveDC"]`);
+      $input.val(selectedFormula);
+      
+      $input.trigger("change"); 
+      
+      $(ev.currentTarget).val(""); 
+  }
+});
 $configHtml.find(".delete-rule-btn").off("click").on("click", async (ev) => {
     ev.preventDefault();
     const index = $(ev.currentTarget).data("index");
@@ -925,12 +1035,15 @@ $html.find('[data-token-id]').each((i, el) => {
           let buttonsHtml = `<div class="er-template-toolbar" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;">`;
           
           if (flags.provideTemplate) {
-              buttonsHtml += `
-                <button type="button" class="er-draw-shape-btn" data-shape="burst" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-circle"></i> Burst</button>
-                <button type="button" class="er-draw-shape-btn" data-shape="cone" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-play"></i> Cone</button>
-                <button type="button" class="er-draw-shape-btn" data-shape="line" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-ruler-horizontal"></i> Line</button>
-              `;
-          }
+            const shapeType = flags.templateType || "circle";
+            if (shapeType === "circle" || shapeType === "burst") {
+                buttonsHtml += `<button type="button" class="er-draw-shape-btn" data-shape="burst" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-circle"></i> Burst</button>`;
+            } else if (shapeType === "cone") {
+                buttonsHtml += `<button type="button" class="er-draw-shape-btn" data-shape="cone" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-play"></i> Cone</button>`;
+            } else if (shapeType === "ray" || shapeType === "line") {
+                buttonsHtml += `<button type="button" class="er-draw-shape-btn" data-shape="line" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-ruler-horizontal"></i> Line</button>`;
+            }
+        }
           if (isTactical) {
               buttonsHtml += `
                 <button type="button" class="er-draw-rect-btn" title="Contiguous Squares" style="flex: 1; border: 1px solid #7a7971; background: rgba(0,0,0,0.1);"><i class="fas fa-th-large"></i> Rect</button>
@@ -948,7 +1061,7 @@ $html.find('[data-token-id]').each((i, el) => {
           $html.find(".message-content").append(buttonsHtml);
       }
       const prepCache = () => {
-        let finalDC = flags.useOverride ? flags.saveDC : (item.system?.defense?.save?.dc?.value || null);
+let finalDC = flags.useOverride ? getSystemSaveDC(item, flags.dcType, flags.saveDC) : (item.system?.defense?.save?.dc?.value || null);
         let finalType = flags.useOverride ? flags.saveType : (item.system?.defense?.save?.statistic || null);
 
         if (!finalDC) {
@@ -1016,7 +1129,7 @@ $html.find('[data-token-id]').each((i, el) => {
                 return ui.notifications.warn("AoE Easy Resolve | You must target tokens on the canvas first!");
             }
 
-            let finalDC = flags.useOverride ? flags.saveDC : (item?.system?.defense?.save?.dc?.value || null);
+            let finalDC = aoeFlags.useOverride ? getSystemSaveDC(item, aoeFlags.dcType, aoeFlags.saveDC) : (item?.system?.defense?.save?.dc?.value || null);
             let finalType = flags.useOverride ? flags.saveType : (item?.system?.defense?.save?.statistic || null);
 
             if (!finalDC) {
@@ -1056,7 +1169,7 @@ $html.find('[data-token-id]').each((i, el) => {
     let fallbackName = item?.name || "AoE Effects";
     if (!item && message.flavor) fallbackName = message.flavor.replace(/<[^>]*>?/gm, '').trim();
 
-    let finalDC = aoeFlags.useOverride ? aoeFlags.saveDC : (item?.system?.defense?.save?.dc?.value || null);
+    let finalDC = aoeFlags.useOverride ? getSystemSaveDC(originItem, aoeFlags.dcType, aoeFlags.saveDC) : (originItem.system?.defense?.save?.dc?.value || null);
     let finalType = aoeFlags.useOverride ? aoeFlags.saveType : (item?.system?.defense?.save?.statistic || null);
 
     if (!finalDC) {
@@ -1166,7 +1279,8 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
   const hazardDamage = aoeData.hazardDamage; 
   
   const useCustomDamage = aoeFlags.useCustomDamage || !!hazardDamage;
-  const customDamageFormula = hazardDamage || aoeFlags.customDamage;
+  const baseDamage = aoeFlags.baseDamage || aoeFlags.customDamage;
+  const customDamageFormula = hazardDamage || compileHeightenedDamage(originItem, baseDamage, aoeFlags.scaleDamage, aoeFlags.scaleMode, aoeData.castLevel);
   const customDamageType = aoeFlags.customDamageType;
 
   let dRoll = null;
@@ -1176,8 +1290,12 @@ $html.find(".roll-damage-btn").off("click").on("click", async (event) => {
     const pf2eDamageClass = CONFIG.Dice.rolls.find(r => r.name === "DamageRoll") || Roll;
     try {
       let safeFormula = customDamageFormula.replace(/\]\s*\+\s*/g, "], ");
+      // THE FIX: Inject dynamic variables into the damage formula
+      const rollData = originItem ? originItem.getRollData() : {};
+      safeFormula = Roll.replaceFormulaData(safeFormula, rollData);
+      
       const fullFormula = customDamageType ? `(${safeFormula})[${customDamageType}]` : safeFormula;
-      dRoll = new pf2eDamageClass(fullFormula);
+      dRoll = new pf2eDamageClass(fullFormula, rollData);
       await dRoll.evaluate();
     } catch (e) {
       ui.notifications.error(`AoE Easy Resolve | Invalid custom damage formula: ${customDamageFormula}`);
@@ -2566,7 +2684,7 @@ const executeShapeProcessing = async (doc) => {
           const originItem = await fromUuid(doc.flags.pf2e.origin.uuid);
           if (originItem) {
               const aoeFlags = originItem.flags?.[MODULE_ID] || {};
-              let finalDC = aoeFlags.useOverride ? aoeFlags.saveDC : (originItem.system?.defense?.save?.dc?.value || null);
+              if (!saveDC) saveDC = flags.useOverride ? getSystemSaveDC(originItem, flags.dcType, flags.saveDC) : (originItem.system?.defense?.save?.dc?.value || null);
               let finalType = aoeFlags.useOverride ? aoeFlags.saveType : (originItem.system?.defense?.save?.statistic || "reflex");
               
               cache = {

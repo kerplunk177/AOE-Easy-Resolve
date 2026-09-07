@@ -61,11 +61,21 @@
   </div>
 
   <div class="form-group">
-    <label>Custom DC</label>
+    <label>Save DC Source</label>
     <div class="form-fields">
-      <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 15">
+        <!-- The Backend Keyword Selector -->
+        <select name="flags.aoe-easy-resolve.dcType" style="flex: 1;">
+            <option value="custom" {{#if isCustomDC}}selected{{/if}}>Custom (Static Number)</option>
+            <option value="highest" {{#if isHighestDC}}selected{{/if}}>Highest (Class or Spell)</option>
+            <option value="class" {{#if isClassDC}}selected{{/if}}>Highest Class DC</option>
+            <option value="spell" {{#if isSpellDC}}selected{{/if}}>Highest Spell DC</option>
+        </select>
+        
+        <!-- The Static Number Fallback -->
+        <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 20" style="flex: 0 0 60px; text-align: center;" />
     </div>
-  </div>
+    <p class="notes">Select a dynamic system DC, or choose "Custom" and enter a number.</p>
+</div>
 
   <hr style="margin: 5px 0;">
   <p class="notes"><strong>Custom Damage Override</strong></p>
@@ -85,15 +95,21 @@
   </div>
 
   <div class="form-group">
-    <label>Damage Type</label>
-    <div class="form-fields">
-      <select name="flags.aoe-easy-resolve.customDamageType">
-        {{#each damageTypeOptions}}
-          <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
-        {{/each}}
-      </select>
+    <label>Custom Damage Builder</label>
+    <div class="form-fields" style="display: flex; align-items: center; gap: 5px;">
+        <input type="text" name="flags.aoe-easy-resolve.baseDamage" value="{{baseDamage}}" placeholder="e.g. 2d6" style="flex: 2;" />
+        <span style="font-weight: bold; color: #888;">+</span>
+        <input type="text" name="flags.aoe-easy-resolve.scaleDamage" value="{{scaleDamage}}" placeholder="1d6" style="flex: 1;" />
+        <span style="font-weight: bold; color: #888;">per</span>
+        <select name="flags.aoe-easy-resolve.scaleMode" style="flex: 2;">
+            <option value="none" {{#if scaleNone}}selected{{/if}}>None</option>
+            <option value="spellRank" {{#if scaleSpellRank}}selected{{/if}}>Spell Rank (+1)</option>
+            <option value="cantrip" {{#if scaleCantrip}}selected{{/if}}>Cantrip Rank (+1)</option>
+            <option value="actorLevel" {{#if scaleActorLevel}}selected{{/if}}>Actor Level (+1)</option>
+        </select>
     </div>
-  </div>
+    <p class="notes">Enter base damage, and optionally add heightening scaling.</p>
+</div>
 
   <hr style="margin: 5px 0;">
   <p class="notes"><strong>Basic Save Multipliers</strong></p>
