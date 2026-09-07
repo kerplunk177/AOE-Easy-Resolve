@@ -517,7 +517,6 @@ function formatTargetsData(targetsObj) {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// --- REACTIVE SAVE GENERATOR ---
 async function generateReactiveSaveCard(tokenDoc, originItem, regionDoc) {
   const flags = originItem.flags?.[MODULE_ID] || {};
   const regionFlags = regionDoc?.flags?.[MODULE_ID] || {};
@@ -525,7 +524,7 @@ async function generateReactiveSaveCard(tokenDoc, originItem, regionDoc) {
   const saveType = flags.useOverride ? flags.saveType : (originItem.system?.defense?.save?.statistic || "reflex");
   
   let saveDC = regionFlags.saveDC || null;
-  if (!saveDC) saveDC = flags.useOverride ? resolveDynamicData(flags.saveDC, originItem) : (originItem.system?.defense?.save?.dc?.value || null);
+  if (!saveDC) saveDC = flags.useOverride ? getSystemSaveDC(originItem, flags.dcType, flags.saveDC) : (originItem.system?.defense?.save?.dc?.value || null);
   
   const isBasicSave = originItem.system?.defense?.save?.basic ?? true;
 
@@ -1169,7 +1168,7 @@ let finalDC = flags.useOverride ? getSystemSaveDC(item, flags.dcType, flags.save
     let fallbackName = item?.name || "AoE Effects";
     if (!item && message.flavor) fallbackName = message.flavor.replace(/<[^>]*>?/gm, '').trim();
 
-    let finalDC = aoeFlags.useOverride ? getSystemSaveDC(originItem, aoeFlags.dcType, aoeFlags.saveDC) : (originItem.system?.defense?.save?.dc?.value || null);
+    let finalDC = aoeFlags.useOverride ? getSystemSaveDC(item, aoeFlags.dcType, aoeFlags.saveDC) : (item?.system?.defense?.save?.dc?.value || null);
     let finalType = aoeFlags.useOverride ? aoeFlags.saveType : (item?.system?.defense?.save?.statistic || null);
 
     if (!finalDC) {
@@ -1189,8 +1188,8 @@ let finalDC = flags.useOverride ? getSystemSaveDC(item, flags.dcType, flags.save
       type: finalType, 
       hazardDuration: aoeFlags.hazardDuration || null, 
       originMessageId: message.id 
-  };
-});
+    };
+  });
 
   const targetsFlag = message.getFlag(MODULE_ID, "targets");
   if (!targetsFlag) return; 
@@ -2684,7 +2683,7 @@ const executeShapeProcessing = async (doc) => {
           const originItem = await fromUuid(doc.flags.pf2e.origin.uuid);
           if (originItem) {
               const aoeFlags = originItem.flags?.[MODULE_ID] || {};
-              if (!saveDC) saveDC = flags.useOverride ? getSystemSaveDC(originItem, flags.dcType, flags.saveDC) : (originItem.system?.defense?.save?.dc?.value || null);
+              let finalDC = aoeFlags.useOverride ? getSystemSaveDC(originItem, aoeFlags.dcType, aoeFlags.saveDC) : (originItem.system?.defense?.save?.dc?.value || null);
               let finalType = aoeFlags.useOverride ? aoeFlags.saveType : (originItem.system?.defense?.save?.statistic || "reflex");
               
               cache = {
@@ -2720,7 +2719,7 @@ const executeShapeProcessing = async (doc) => {
             console.log("AoE Easy Resolve | Spell is an unconfigured utility. Ignoring template.");
             return;
         }
-    }
+      }
 
       let saveType = cache.type || "reflex"; 
       let saveDC = cache.dc;
