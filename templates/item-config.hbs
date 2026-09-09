@@ -34,6 +34,24 @@
       <input type="checkbox" name="flags.aoe-easy-resolve.provideTemplate" {{checked provideTemplate}}>
     </div>
   </div>
+  <div class="form-group">
+    <label>Hazard Duration</label>
+    <div class="form-fields">
+        <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="e.g. 1 (Rounds)" />
+    </div>
+    <p class="notes">Leave blank for infinite. Template auto-deletes after this many combat rounds.</p>
+</div>
+
+<div class="form-group">
+    <label>Terrain Effects</label>
+    <div class="form-fields">
+        <select name="flags.aoe-easy-resolve.terrainEffect" style="flex: 1;">
+            <option value="none" {{#if terrainNone}}selected{{/if}}>Normal Terrain</option>
+            <option value="difficult" {{#if terrainDifficult}}selected{{/if}}>Difficult Terrain (+1 Cost)</option>
+            <option value="greater" {{#if terrainGreater}}selected{{/if}}>Greater Difficult Terrain (+2 Cost)</option>
+        </select>
+    </div>
+</div>
 
   {{#if provideTemplate}}
   <div class="form-group">
@@ -141,12 +159,6 @@
     </div>
   </div>
   <div class="form-group">
-    <label>Hazard Duration (Rounds)</label>
-    <div class="form-fields">
-      <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="Leave blank for infinite">
-    </div>
-  </div>
-  <div class="form-group">
     <label>Enable Tactical Drawing Tools?</label>
     <input type="checkbox" name="flags.aoe-easy-resolve.tacticalDrawing" {{checked tacticalDrawing}}>
     <p class="notes">Adds Freehand and Rectangle drawing tools to the chat card for custom hazard shapes.</p>
@@ -179,7 +191,9 @@
           <option value="always" {{#if rule.isAlways}}selected{{/if}}>Always (Passive / Enter)</option>
           <option value="criticalSuccess" {{#if rule.isCS}}selected{{/if}}>Crit / Crit Success</option>
           <option value="success" {{#if rule.isS}}selected{{/if}}>Hit / Success</option>
+          <option value="successOrBetter" {{#if rule.isSuccessOrBetter}}selected{{/if}}>Success or Better</option>
           <option value="failure" {{#if rule.isF}}selected{{/if}}>Miss / Failure</option>
+          <option value="failOrWorse" {{#if rule.isFailOrWorse}}selected{{/if}}>Failure or Worse</option>
           <option value="criticalFailure" {{#if rule.isCF}}selected{{/if}}>Crit Miss / Crit Fail</option>
         </select>
       </div>
