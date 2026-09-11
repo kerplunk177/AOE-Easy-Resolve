@@ -1832,7 +1832,7 @@ $html.find(".step-dos-btn").off("click").on("click", async (event) => {
             } else if (isHarm) {
                 const harmState = message.getFlag("necromancer-thrall-helper", `harmState_${tokenId}`) || "void";
                 if (harmState === "vit") {
-                    effectType = negativeHealing ? "damage" : "heal";
+                    effectType = negativeHealing ? "damage" : "none";
                     overrideType = "vitality";
                 } else if (harmState === "heal") {
                     effectType = "heal";
@@ -1842,9 +1842,14 @@ $html.find(".step-dos-btn").off("click").on("click", async (event) => {
                     overrideType = "void";
                 }
             } else {
-                if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; } 
-                else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; } 
-                else if (isHealingTrait) { effectType = negativeHealing ? "none" : "heal"; }
+                if (isHealingTrait) {
+                    if (isVitality) { effectType = negativeHealing ? "damage" : "heal"; overrideType = "vitality"; }
+                    else if (isVoid) { effectType = negativeHealing ? "heal" : "damage"; overrideType = "void"; }
+                    else { effectType = negativeHealing ? "none" : "heal"; }
+                } else {
+                    if (isVitality) { effectType = negativeHealing ? "damage" : "none"; overrideType = "vitality"; } 
+                    else if (isVoid) { effectType = negativeHealing ? "none" : "damage"; overrideType = "void"; }
+                }
             }
 
             if (effectType === "standard" && pf2eDamageRoll && pf2eDamageRoll.instances?.some(i => i.type === "healing")) effectType = negativeHealing ? "none" : "heal";
@@ -2653,9 +2658,14 @@ async function generateTemplateCard(doc, cfg) {
           const negativeHealing = t.actor?.system?.attributes?.hp?.negativeHealing || false;
           let effectType = "standard";
 
-          if (isVitality) effectType = negativeHealing ? "damage" : "heal";
-          else if (isVoid) effectType = negativeHealing ? "heal" : "damage";
-          else if (isHealingTrait) effectType = negativeHealing ? "none" : "heal";
+          if (isHealingTrait) {
+            if (isVitality) effectType = negativeHealing ? "damage" : "heal";
+            else if (isVoid) effectType = negativeHealing ? "heal" : "damage";
+            else effectType = negativeHealing ? "none" : "heal";
+        } else {
+            if (isVitality) effectType = negativeHealing ? "damage" : "none";
+            else if (isVoid) effectType = negativeHealing ? "none" : "damage";
+        }
 
           if (effectType === "standard" && cfg.hazardDamage && cfg.hazardDamage.includes("healing")) effectType = negativeHealing ? "none" : "heal";
 
