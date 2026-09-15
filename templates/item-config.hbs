@@ -1,250 +1,518 @@
-<fieldset>
-  <legend>AoE Easy Resolve Configuration</legend>
+<div>
+    <style>
+      .aoe-app-nav { display: flex; border-bottom: 1px solid #7a7971; margin-bottom: 15px; }
+      .aoe-app-nav a { padding: 8px 15px; cursor: pointer; border: 1px solid transparent; border-bottom: none; font-size: 1.1em; }
+      .aoe-app-nav a:hover { background: rgba(0,0,0,0.05); }
+      .aoe-app-nav a.active { border-color: #7a7971; background: rgba(0,0,0,0.1); border-radius: 4px 4px 0 0; font-weight: bold; }
+      .tab-content .tab { display: none; padding: 5px; }
+      .tab-content .tab.active { display: block; }
+      .rule-card { border: 1px solid #7a7971; padding: 10px; margin-bottom: 10px; background: rgba(0,0,0,0.05); border-radius: 4px; position: relative; }
+    </style>
 
-  <div class="form-group">
-    <label>Ignore AoE Automation?</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.aoe-easy-resolve.ignoreAoE" {{checked ignoreAoE}}>
-    </div>
-  </div>
-  <div class="form-group">
-    <label>Enable Multi-Target (No Template)?</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.aoe-easy-resolve.enableMultiTarget" {{checked enableMultiTarget}}>
-    </div>
-  </div>
-  <div class="form-group">
-    <label>Is Area Damage?</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.aoe-easy-resolve.isAreaDamage" {{checked isAreaDamage}}>
-    </div>
-    <p class="notes">Forces the 'area-effect' and 'damaging-effect' traits on this spell to correctly trigger Swarm weaknesses.</p>
-  </div>
+    {{#if isWizard}}
+    <div style="padding: 10px 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h2 style="margin: 0; border: none;"><i class="fas fa-magic" style="color: #9b59b6;"></i> Effect Wizard</h2>
+            <div style="width: 50%; height: 8px; background: rgba(0,0,0,0.1); border-radius: 4px; overflow: hidden;">
+                <div class="wizard-progress-bar" style="height: 100%; background: #9b59b6; width: 0%; transition: width 0.3s ease;"></div>
+            </div>
+        </div>
 
-  <div class="form-group">
-    <label>Override System Save?</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.aoe-easy-resolve.useOverride" {{checked useOverride}}>
-    </div>
-  </div>
+        <div class="wizard-content" style="min-height: 450px; background: rgba(0,0,0,0.03); border: 1px solid #7a7971; border-radius: 4px; padding: 15px;">
+            
+            <!-- STEP 1: SHAPE -->
+            <div class="wizard-step" data-step="1">
+                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 1: Geometry & Targeting</h3>
+                <p class="notes">How do you target creatures with this effect?</p>
+                
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;">
+                        <input type="radio" name="wizardShape" value="normal" {{#if provideTemplate}}checked{{/if}}>
+                        <strong>Standard Template</strong> (Bursts, Cones, and Lines)
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;">
+                        <input type="radio" name="wizardShape" value="multi" {{#if enableMultiTarget}}checked{{/if}}>
+                        <strong>Targeted Multi-Strike</strong> (No template, fires directly at targeted tokens)
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;">
+                        <input type="radio" name="wizardShape" value="tactical" {{#if tacticalDrawing}}checked{{/if}}>
+                        <strong>Tactical & Freehand</strong> (Draw contiguous squares or weird organic zones)
+                    </label>
+                </div>
 
-  <div class="form-group">
-    <label>Provide Custom Template?</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.aoe-easy-resolve.provideTemplate" {{checked provideTemplate}}>
+                <div class="wizard-normal-settings" style="display: {{#if provideTemplate}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-weight: bold; flex: 0 0 120px;">Shape & Size</label>
+                        <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
+                            <select name="flags.aoe-easy-resolve.templateType" style="flex: 2; padding: 4px;">
+                                <option value="circle" {{#if isCircle}}selected{{/if}}>Burst</option>
+                                <option value="cone" {{#if isCone}}selected{{/if}}>Cone</option>
+                                <option value="ray" {{#if isRay}}selected{{/if}}>Line</option>
+                            </select>
+                            <input type="number" name="flags.aoe-easy-resolve.templateDistance" value="{{templateDistance}}" placeholder="15" style="flex: 1; text-align: center; padding: 4px;">
+                            <span style="font-weight: bold; color: #555;">ft.</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="wizard-tactical-settings" style="display: {{#if tacticalDrawing}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-weight: bold; flex: 0 0 180px;">Max Contiguous Squares</label>
+                        <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
+                            <input type="number" name="flags.aoe-easy-resolve.tacticalBlocks" value="{{tacticalBlocks}}" placeholder="e.g. 4" style="flex: 1; text-align: center; padding: 4px;">
+                            <span style="font-weight: bold; color: #555;">squares</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: SAVE -->
+            <div class="wizard-step" data-step="2" style="display: none;">
+                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 2: The Initial Save</h3>
+                <p class="notes">Does the initial impact force a saving throw?</p>
+                
+                <div style="display: flex; gap: 15px; margin-top: 15px;">
+                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; cursor: pointer;">
+                        <input type="radio" name="wizardSave" value="yes" {{#if useOverride}}checked{{/if}}> Yes, prompt a Save
+                    </label>
+                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; cursor: pointer;">
+                        <input type="radio" name="wizardSave" value="no" {{#unless useOverride}}checked{{/unless}}> No Save (Auto-hit or Utility)
+                    </label>
+                </div>
+
+                <div class="wizard-save-settings" style="display: {{#if useOverride}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                    <div class="form-group" style="margin-bottom: 10px;">
+                        <label style="font-weight: bold; flex: 0 0 120px;">Save Type</label>
+                        <div class="form-fields">
+                            <select name="flags.aoe-easy-resolve.saveType" style="padding: 4px;">
+                                <option value="fortitude" {{#if isFort}}selected{{/if}}>Fortitude</option>
+                                <option value="reflex" {{#if isReflex}}selected{{/if}}>Reflex</option>
+                                <option value="will" {{#if isWill}}selected{{/if}}>Will</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label style="font-weight: bold; flex: 0 0 120px;">Target DC</label>
+                        <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
+                            <select name="flags.aoe-easy-resolve.dcType" style="flex: 2; padding: 4px;">
+                                <option value="highest" {{#if isHighestDC}}selected{{/if}}>Highest of Caster</option>
+                                <option value="spell" {{#if isSpellDC}}selected{{/if}}>Spell DC</option>
+                                <option value="class" {{#if isClassDC}}selected{{/if}}>Class DC</option>
+                                <option value="custom" {{#if isCustomDC}}selected{{/if}}>Custom Number</option>
+                            </select>
+                            <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 20" style="flex: 1; text-align: center; padding: 4px;" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: EFFECTS -->
+            <div class="wizard-step" data-step="3" style="display: none;">
+                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 3: Condition Effects</h3>
+                <p class="notes">Does the hazard apply specific conditions (like Frightened or Prone) based on the save?</p>
+                
+                <div class="form-group" style="margin-top: 15px; align-items: center;">
+                    <label style="font-weight: bold; flex: 0 0 200px;">Apply Condition Effects?</label>
+                    <div class="form-fields">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.useWizardEffects" {{checked useWizardEffects}} style="width: 20px; height: 20px;">
+                    </div>
+                </div>
+
+                <div class="wizard-effects-settings" style="display: {{#if useWizardEffects}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                    
+                    <div style="display: flex; gap: 8px; font-size: 0.8em; font-weight: bold; color: #555; margin-bottom: 4px; padding-right: 28px;">
+                        <span style="flex: 0 0 100px;">Trigger</span>
+                        <span style="width: 15px;"></span>
+                        <span style="flex: 2;">Condition</span>
+                        <span style="flex: 0 0 40px; text-align: center;">Val</span>
+                        <span style="flex: 0 0 50px; text-align: center;">Rounds</span>
+                    </div>
+
+                    {{#each mappedWizardEffects as |effect|}}
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                        <select name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.outcome" style="flex: 0 0 120px;">
+                            <option value="criticalFailure" {{effect.selCF}}>Crit Fail</option>
+                            <option value="failOrWorse" {{effect.selFailOrWorse}}>Fail or Worse</option>
+                            <option value="failure" {{effect.selF}}>Failure</option>
+                            <option value="success" {{effect.selS}}>Success</option>
+                            <option value="successOrBetter" {{effect.selSuccessOrBetter}}>Success or Better</option>
+                            <option value="criticalSuccess" {{effect.selCS}}>Crit Success</option>
+                            <option value="always" {{effect.selAlways}}>Always</option>
+                        </select>
+                        <span style="font-weight:bold; color: #777;">&rarr;</span>
+                        <select name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.slug" style="flex: 2;">
+                            {{#each effect.conditionOptions}}
+                            <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
+                            {{/each}}
+                        </select>
+                        <input type="number" name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.value" value="{{effect.value}}" placeholder="Val" style="flex: 0 0 40px; text-align: center;" title="Value (e.g. 1 for Frightened 1)">
+                        <input type="number" name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.duration" value="{{effect.duration}}" placeholder="Rnds" style="flex: 0 0 50px; text-align: center;" title="Duration in Rounds (leave blank for default)">
+                        <a data-action="deleteWizardEffect" data-index="{{effect.index}}" style="color: #e74c3c; cursor: pointer; padding: 4px;"><i class="fas fa-times"></i></a>
+                    </div>
+                    {{/each}}
+                    
+                    <button type="button" data-action="addWizardEffect" style="margin-top: 10px; background: rgba(0,0,0,0.05); border: 1px dashed #7a7971;"><i class="fas fa-plus"></i> Add Effect</button>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 10px; background: rgba(52, 152, 219, 0.1); border: 1px solid rgba(52, 152, 219, 0.3); border-radius: 4px;">
+                    <p style="margin: 0; font-size: 0.9em;"><strong>Note:</strong> You can stack effects (e.g., Prone and Clumsy 2 on a Crit Fail). For complex triggers (like "On Token Enter"), finish the Wizard and check the Advanced Tab.</p>
+                </div>
+              
+            </div>
+
+            <!-- STEP 4: INITIAL IMPACT & DAMAGE BUILDER -->
+            <div class="wizard-step" data-step="4" style="display: none;">
+                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 3: Initial Resolution</h3>
+                <p class="notes">What happens immediately when the hazard hits?</p>
+
+                <div class="form-group" style="margin-top: 15px; align-items: center;">
+                    <label style="font-weight: bold; flex: 0 0 200px;">Configure Initial Damage?</label>
+                    <div class="form-fields">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.useCustomDamage" {{checked useCustomDamage}} style="width: 20px; height: 20px;">
+                    </div>
+                </div>
+
+                <div class="wizard-damage-settings" style="display: {{#if useCustomDamage}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                    
+                    <div style="display: flex; gap: 15px; margin-bottom: 15px; border-bottom: 1px dashed rgba(0,0,0,0.1); padding-bottom: 10px;">
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: bold;" title="Success = Half Damage, Crit Success = No Damage, Crit Fail = Double Damage">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.isBasicSave" {{checked isBasicSave}}> Basic Saving Throw?
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: bold;" title="Applies the 'area-effect' and 'damaging-effect' traits to trigger Swarm weaknesses.">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.isAreaDamage" {{checked isAreaDamage}}> Area Damage?
+                        </label>
+                    </div>
+
+                    <p class="notes" style="margin-bottom: 10px; font-weight: bold; color: #333;">Damage Dice</p>
+
+                    {{#each mappedDamageParts as |part|}}
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px; position: relative;">
+                        <input type="number" name="flags.aoe-easy-resolve.damageParts.{{part.index}}.dice" value="{{part.dice}}" placeholder="#" style="flex: 0 0 50px; text-align: center;">
+                        <select name="flags.aoe-easy-resolve.damageParts.{{part.index}}.die" style="flex: 0 0 60px;">
+                            {{#each part.dieOptions}}
+                            <option value="{{this.value}}" {{this.selected}}>{{this.value}}</option>
+                            {{/each}}
+                        </select>
+                        <select name="flags.aoe-easy-resolve.damageParts.{{part.index}}.type" style="flex: 2;">
+                            {{#each part.typeOptions}}
+                            <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
+                            {{/each}}
+                        </select>
+                        {{#if part.index}}
+                            <a data-action="deleteDamagePart" data-index="{{part.index}}" style="color: #e74c3c; cursor: pointer; padding: 4px;" title="Remove Type"><i class="fas fa-times"></i></a>
+                        {{/if}}
+                    </div>
+                    {{/each}}
+                    
+                    <button type="button" data-action="addDamagePart" style="margin-top: 10px; background: rgba(0,0,0,0.05); border: 1px dashed #7a7971;"><i class="fas fa-plus"></i> Add Damage Type</button>
+
+                </div>
+
+                <script>
+                    document.querySelector("input[name='flags.aoe-easy-resolve.useCustomDamage']")?.addEventListener("change", (e) => {
+                        const container = document.querySelector(".wizard-damage-settings");
+                        if (container) container.style.display = e.target.checked ? "block" : "none";
+                    });
+                </script>
+            </div>
+
+            <!-- STEP 4: PERSISTENCE -->
+            <div class="wizard-step" data-step="5" style="display: none;">
+                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px;">Step 4: Persistence</h3>
+                <p class="notes">Does the effect stay on the battlefield, or does it fade instantly?</p>
+
+                <div style="display: flex; gap: 15px; margin-top: 15px;">
+                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 4px; cursor: pointer;">
+                        <input type="radio" name="wizardPersist" value="no" {{#unless hazardDuration}}checked{{/unless}}> Fades Immediately
+                    </label>
+                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 4px; cursor: pointer;">
+                        <input type="radio" name="wizardPersist" value="yes" {{#if hazardDuration}}checked{{/if}}> Lingers as a Zone
+                    </label>
+                </div>
+
+                <div class="wizard-persist-settings" style="display: {{#if hazardDuration}}block{{else}}none{{/if}}; margin-top: 15px; padding: 10px; border-left: 3px solid #9b59b6;">
+                    <div class="form-group">
+                        <label>How long? (Combat Rounds)</label>
+                        <div class="form-fields">
+                            <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="Leave blank for infinite" />
+                        </div>
+                        <p class="notes">The system will automatically delete the hazard when time is up.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 5: HAZARD PURPOSE -->
+            <div class="wizard-step" data-step="6" style="display: none;">
+                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px;">Step 5: Hazard Zone Behavior</h3>
+                <p class="notes">If the zone lingers, what does it do to creatures inside it?</p>
+
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>Difficult Terrain?</label>
+                    <div class="form-fields">
+                        <select name="flags.aoe-easy-resolve.terrainEffect" style="flex: 1;">
+                            <option value="none" {{#if terrainNone}}selected{{/if}}>None (Normal Terrain)</option>
+                            <option value="difficult" {{#if terrainDifficult}}selected{{/if}}>Difficult Terrain (+1 Cost)</option>
+                            <option value="greater" {{#if terrainGreater}}selected{{/if}}>Greater Difficult (+2 Cost)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px; padding: 10px; background: rgba(231, 76, 60, 0.1); border: 1px solid rgba(231, 76, 60, 0.3); border-radius: 4px;">
+                    <p style="margin: 0; font-size: 0.9em;"><strong>Advanced Mode Required:</strong> Setting up "Reactive Saves on Enter" or "Additional Damage on Turn End" requires the Rules Engine. Switch to the Advanced Tab to add these specific triggers.</p>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- WIZARD CONTROLS -->
+        <div style="display: flex; justify-content: space-between; margin-top: 15px;">
+            <button type="button" class="wizard-prev" style="width: auto; padding: 0 15px; display: none;"><i class="fas fa-arrow-left"></i> Back</button>
+            <div style="flex: 1;"></div>
+            <button type="button" class="wizard-next" style="width: auto; padding: 0 15px;"><i class="fas fa-arrow-right"></i> Next</button>
+            <button type="submit" class="wizard-save" style="width: auto; padding: 0 15px; display: none; background: #9b59b6; color: white; border: none;"><i class="fas fa-save"></i> Save Configuration</button>
+        </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label>Hazard Duration</label>
-    <div class="form-fields">
-        <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="e.g. 1 (Rounds)" />
-    </div>
-    <p class="notes">Leave blank for infinite. Template auto-deletes after this many combat rounds.</p>
+{{else}}
+        <nav class="aoe-app-nav sheet-tabs">
+            <a class="item" data-tab="blast"><i class="fas fa-fire"></i> Blast & Math</a>
+            <a class="item" data-tab="zone"><i class="fas fa-map"></i> Environment</a>
+            <a class="item" data-tab="rules"><i class="fas fa-clipboard-list"></i> Rules Engine</a>
+        </nav>
+
+        <section class="tab-content" style="height: calc(100% - 100px); overflow-y: auto;">
+            
+            <!-- TAB 1: BLAST & MATH -->
+            <div class="tab" data-tab="blast">
+                <div class="form-group" style="align-items: center;">
+                <label style="font-weight: bold; flex: 0 0 160px;">Override System Save?</label>
+                <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
+                    <input type="checkbox" name="flags.aoe-easy-resolve.useOverride" {{checked useOverride}}>
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.9em; border-left: 1px solid #ccc; padding-left: 15px;">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.isBasicSave" {{checked isBasicSave}}> Basic Save Math?
+                    </label>
+                </div>
+            </div>
+                <div class="form-group">
+                    <label>Save Type</label>
+                    <div class="form-fields">
+                        <select name="flags.aoe-easy-resolve.saveType">
+                            <option value="fortitude" {{#if isFort}}selected{{/if}}>Fortitude</option>
+                            <option value="reflex" {{#if isReflex}}selected{{/if}}>Reflex</option>
+                            <option value="will" {{#if isWill}}selected{{/if}}>Will</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Save DC Source</label>
+                    <div class="form-fields">
+                        <select name="flags.aoe-easy-resolve.dcType" style="flex: 1;">
+                            <option value="custom" {{#if isCustomDC}}selected{{/if}}>Custom (Static Number)</option>
+                            <option value="highest" {{#if isHighestDC}}selected{{/if}}>Highest (Class or Spell)</option>
+                            <option value="class" {{#if isClassDC}}selected{{/if}}>Highest Class DC</option>
+                            <option value="spell" {{#if isSpellDC}}selected{{/if}}>Highest Spell DC</option>
+                        </select>
+                        <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 20" style="flex: 0 0 60px; text-align: center;" />
+                    </div>
+                </div>
+
+                <hr style="margin: 15px 0;">
+                <p class="notes" style="font-weight: bold;">Geometry & Targeting</p>
+
+                <div class="form-group">
+                    <label>Provide Custom Template?</label>
+                    <div class="form-fields"><input type="checkbox" name="flags.aoe-easy-resolve.provideTemplate" {{checked provideTemplate}}></div>
+                </div>
+                {{#if provideTemplate}}
+                <div class="form-group">
+                    <label>Shape & Size</label>
+                    <div class="form-fields">
+                        <select name="flags.aoe-easy-resolve.templateType" style="width: 50%;">
+                            <option value="cone" {{#if isCone}}selected{{/if}}>Cone</option>
+                            <option value="circle" {{#if isCircle}}selected{{/if}}>Burst</option>
+                            <option value="ray" {{#if isRay}}selected{{/if}}>Line</option>
+                        </select>
+                        <input type="number" name="flags.aoe-easy-resolve.templateDistance" value="{{templateDistance}}" placeholder="ft." style="width: 50%;">
+                    </div>
+                </div>
+                {{/if}}
+
+                <div class="form-group">
+                    <label>Enable Multi-Target (No Template)?</label>
+                    <div class="form-fields"><input type="checkbox" name="flags.aoe-easy-resolve.enableMultiTarget" {{checked enableMultiTarget}}></div>
+                </div>
+                <div class="form-group" style="align-items: center;">
+                    <label style="font-weight: bold; flex: 0 0 200px;">Enable Tactical Drawing Tools?</label>
+                    <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.tacticalDrawing" {{checked tacticalDrawing}}>
+                        <input type="number" name="flags.aoe-easy-resolve.tacticalBlocks" value="{{tacticalBlocks}}" placeholder="Max Squares (e.g. 4)" style="width: 150px; padding: 4px; text-align: center;">
+                    </div>
+                </div>
+
+                <hr style="margin: 15px 0;">
+                <p class="notes" style="font-weight: bold;">Damage Overrides</p>
+
+                <div class="form-group">
+                    <label>Use Custom Damage Builder?</label>
+                    <div class="form-fields"><input type="checkbox" name="flags.aoe-easy-resolve.useCustomDamage" {{checked useCustomDamage}}></div>
+                </div>
+                {{#if useCustomDamage}}
+                <div class="form-group">
+                    <label>Formula</label>
+                    <div class="form-fields" style="display: flex; align-items: center; gap: 5px;">
+                        <input type="text" name="flags.aoe-easy-resolve.baseDamage" value="{{baseDamage}}" placeholder="e.g. 2d6" style="flex: 2;" />
+                        <span style="font-weight: bold; color: #888;">+</span>
+                        <input type="text" name="flags.aoe-easy-resolve.scaleDamage" value="{{scaleDamage}}" placeholder="1d6" style="flex: 1;" />
+                        <span style="font-weight: bold; color: #888;">per</span>
+                        <select name="flags.aoe-easy-resolve.scaleMode" style="flex: 2;">
+                            <option value="none" {{#if scaleNone}}selected{{/if}}>None</option>
+                            <option value="spellRank" {{#if scaleSpellRank}}selected{{/if}}>Spell Rank (+1)</option>
+                            <option value="cantrip" {{#if scaleCantrip}}selected{{/if}}>Cantrip Rank (+1)</option>
+                            <option value="actorLevel" {{#if scaleActorLevel}}selected{{/if}}>Actor Level (+1)</option>
+                        </select>
+                    </div>
+                </div>
+                {{/if}}
+            </div>
+
+            <!-- TAB 2: ENVIRONMENT & ZONE -->
+            <div class="tab" data-tab="zone">
+                <div class="form-group">
+                    <label>Hazard Duration</label>
+                    <div class="form-fields">
+                        <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="e.g. 1 (Rounds)" />
+                    </div>
+                    <p class="notes">Leave blank for infinite. Swept automatically by the Janitor.</p>
+                </div>
+
+                <div class="form-group">
+                    <label>Terrain Effects</label>
+                    <div class="form-fields">
+                        <select name="flags.aoe-easy-resolve.terrainEffect" style="flex: 1;">
+                            <option value="none" {{#if terrainNone}}selected{{/if}}>Normal Terrain</option>
+                            <option value="difficult" {{#if terrainDifficult}}selected{{/if}}>Difficult Terrain (+1 Cost)</option>
+                            <option value="greater" {{#if terrainGreater}}selected{{/if}}>Greater Difficult Terrain (+2 Cost)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <hr style="margin: 15px 0;">
+                <p class="notes" style="font-weight: bold;">Alliance Matrix</p>
+
+                <div class="form-group">
+                    <label>Enemy Base Effect</label>
+                    <div class="form-fields">
+                        <select name="flags.aoe-easy-resolve.enemyBaseEffect">
+                            <option value="standard" {{#if enemyBaseStandard}}selected{{/if}}>Standard (Take Damage)</option>
+                            <option value="heal" {{#if enemyBaseHeal}}selected{{/if}}>Healing (Restore HP)</option>
+                            <option value="immune" {{#if enemyBaseImmune}}selected{{/if}}>Immune (Ignore Roll)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Ally Base Effect</label>
+                    <div class="form-fields">
+                        <select name="flags.aoe-easy-resolve.allyBaseEffect">
+                            <option value="standard" {{#if allyBaseStandard}}selected{{/if}}>Standard (Take Damage)</option>
+                            <option value="heal" {{#if allyBaseHeal}}selected{{/if}}>Healing (Restore HP)</option>
+                            <option value="immune" {{#if allyBaseImmune}}selected{{/if}}>Immune (Ignore Roll)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Is Area Damage?</label>
+                    <div class="form-fields">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.isAreaDamage" {{checked isAreaDamage}}>
+                    </div>
+                    <p class="notes">Forces the 'area-effect' and 'damaging-effect' traits to trigger Swarm weaknesses.</p>
+                </div>
+            </div>
+
+            <!-- TAB 3: RULES ENGINE -->
+            <div class="tab" data-tab="rules">
+                <p class="notes" style="margin-bottom: 10px;">Define specific triggers based on roll outcomes and target traits.</p>
+                
+                {{#each processedRules as |rule|}}
+                <div class="rule-card">
+                    <a data-action="deleteRule" data-index="{{rule.index}}" style="position: absolute; top: 5px; right: 8px; color: #ff6666; cursor: pointer;" title="Delete Rule"><i class="fas fa-trash"></i></a>
+                    
+                    <div class="form-group">
+                        <label>Trigger</label>
+                        <div class="form-fields">
+                            <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.context">
+                                <option value="attack" {{#if rule.isAttack}}selected{{/if}}>Attack Roll</option>
+                                <option value="save" {{#if rule.isSave}}selected{{/if}}>Save Result</option>
+                                <option value="reactiveSave" {{#if rule.isReactiveSave}}selected{{/if}}>Reactive Save (Hazard)</option>
+                                <option value="tokenEnter" {{#if rule.isTokenEnter}}selected{{/if}}>Token Enters Region</option>
+                                <option value="tokenExit" {{#if rule.isTokenExit}}selected{{/if}}>Token Exits Region</option>
+                                <option value="tokenMove" {{#if rule.isTokenMove}}selected{{/if}}>Moves Within Region</option>
+                                <option value="turnStart" {{#if rule.isTurnStart}}selected{{/if}}>Start of Turn</option>
+                                <option value="turnEnd" {{#if rule.isTurnEnd}}selected{{/if}}>End of Turn</option>
+                            </select>
+                            <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.outcome">
+                                <option value="always" {{#if rule.isAlways}}selected{{/if}}>Always (Passive / Enter)</option>
+                                <option value="criticalSuccess" {{#if rule.isCS}}selected{{/if}}>Crit / Crit Success</option>
+                                <option value="success" {{#if rule.isS}}selected{{/if}}>Hit / Success</option>
+                                <option value="successOrBetter" {{#if rule.isSuccessOrBetter}}selected{{/if}}>Success or Better</option>
+                                <option value="failure" {{#if rule.isF}}selected{{/if}}>Miss / Failure</option>
+                                <option value="failOrWorse" {{#if rule.isFailOrWorse}}selected{{/if}}>Failure or Worse</option>
+                                <option value="criticalFailure" {{#if rule.isCF}}selected{{/if}}>Crit Miss / Crit Fail</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Target Scope</label>
+                        <div class="form-fields">
+                            <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.alliance">
+                                <option value="all" {{#if rule.isAllianceAll}}selected{{/if}}>Affects Everyone</option>
+                                <option value="enemy" {{#if rule.isAllianceEnemy}}selected{{/if}}>Enemies Only</option>
+                                <option value="ally" {{#if rule.isAllianceAlly}}selected{{/if}}>Allies Only</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Target Trait Requirement</label>
+                        <div class="form-fields">
+                            <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.trait" value="{{rule.trait}}" placeholder="e.g. plant (leave blank)">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Condition UUID</label>
+                        <div class="form-fields">
+                            <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.conditionUuid" value="{{rule.conditionUuid}}" placeholder="Compendium.pf2e...">
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
+                        <label style="display: flex; align-items: center; gap: 4px; font-size: 0.9em;">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.removeOnExit" {{checked rule.removeOnExit}}> Remove on Exit
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 4px; font-size: 0.9em;">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.promptSave" {{#if rule.promptSave}}checked{{/if}}> Prompt Reactive Save?
+                        </label>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 10px;">
+                        <label>Bonus Damage</label>
+                        <div class="form-fields">
+                            <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.damageFormula" value="{{rule.damageFormula}}" placeholder="e.g. 1d6" style="width: 50%;">
+                            <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.damageType" style="width: 50%;">
+                                {{#each rule.damageTypeOptions}}
+                                <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
+                                {{/each}}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                {{/each}}
+
+                <button type="button" data-action="addRule" style="margin-top: 5px;"><i class="fas fa-plus"></i> Add New Rule</button>
+            </div>
+        </section>
+
+        <footer style="margin-top: 15px; border-top: 1px solid rgba(0,0,0,0.2); padding-top: 10px; text-align: right;">
+            <button type="submit" style="width: auto; padding: 0 15px;"><i class="fas fa-save"></i> Save Configuration</button>
+        </footer>
+    {{/if}}
 </div>
-
-<div class="form-group">
-    <label>Terrain Effects</label>
-    <div class="form-fields">
-        <select name="flags.aoe-easy-resolve.terrainEffect" style="flex: 1;">
-            <option value="none" {{#if terrainNone}}selected{{/if}}>Normal Terrain</option>
-            <option value="difficult" {{#if terrainDifficult}}selected{{/if}}>Difficult Terrain (+1 Cost)</option>
-            <option value="greater" {{#if terrainGreater}}selected{{/if}}>Greater Difficult Terrain (+2 Cost)</option>
-        </select>
-    </div>
-</div>
-
-  {{#if provideTemplate}}
-  <div class="form-group">
-    <label>Shape & Size</label>
-    <div class="form-fields">
-      <select name="flags.aoe-easy-resolve.templateType" style="width: 50%;">
-        <option value="cone" {{#if isCone}}selected{{/if}}>Cone</option>
-        <option value="circle" {{#if isCircle}}selected{{/if}}>Burst</option>
-        <option value="ray" {{#if isRay}}selected{{/if}}>Line</option>
-      </select>
-      <input type="number" name="flags.aoe-easy-resolve.templateDistance" value="{{templateDistance}}" placeholder="ft." style="width: 50%;">
-    </div>
-  </div>
-  {{/if}}
-
-  <div class="form-group">
-    <label>Save Type</label>
-    <div class="form-fields">
-      <select name="flags.aoe-easy-resolve.saveType">
-        <option value="fortitude" {{#if isFort}}selected{{/if}}>Fortitude</option>
-        <option value="reflex" {{#if isReflex}}selected{{/if}}>Reflex</option>
-        <option value="will" {{#if isWill}}selected{{/if}}>Will</option>
-      </select>
-    </div>
-  </div>
-
-  <div class="form-group">
-    <label>Save DC Source</label>
-    <div class="form-fields">
-        <!-- The Backend Keyword Selector -->
-        <select name="flags.aoe-easy-resolve.dcType" style="flex: 1;">
-            <option value="custom" {{#if isCustomDC}}selected{{/if}}>Custom (Static Number)</option>
-            <option value="highest" {{#if isHighestDC}}selected{{/if}}>Highest (Class or Spell)</option>
-            <option value="class" {{#if isClassDC}}selected{{/if}}>Highest Class DC</option>
-            <option value="spell" {{#if isSpellDC}}selected{{/if}}>Highest Spell DC</option>
-        </select>
-        
-        <!-- The Static Number Fallback -->
-        <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 20" style="flex: 0 0 60px; text-align: center;" />
-    </div>
-    <p class="notes">Select a dynamic system DC, or choose "Custom" and enter a number.</p>
-</div>
-
-  <hr style="margin: 5px 0;">
-  <p class="notes"><strong>Custom Damage Override</strong></p>
-  
-  <div class="form-group">
-    <label>Use Custom Damage?</label>
-    <div class="form-fields">
-      <input type="checkbox" name="flags.aoe-easy-resolve.useCustomDamage" {{checked useCustomDamage}}>
-    </div>
-  </div>
-
-  <div class="form-group">
-    <label>Formula</label>
-    <div class="form-fields">
-      <input type="text" name="flags.aoe-easy-resolve.customDamage" value="{{customDamage}}" placeholder="e.g. 3d6">
-    </div>
-  </div>
-
-  <div class="form-group">
-    <label>Custom Damage Builder</label>
-    <div class="form-fields" style="display: flex; align-items: center; gap: 5px;">
-        <input type="text" name="flags.aoe-easy-resolve.baseDamage" value="{{baseDamage}}" placeholder="e.g. 2d6" style="flex: 2;" />
-        <span style="font-weight: bold; color: #888;">+</span>
-        <input type="text" name="flags.aoe-easy-resolve.scaleDamage" value="{{scaleDamage}}" placeholder="1d6" style="flex: 1;" />
-        <span style="font-weight: bold; color: #888;">per</span>
-        <select name="flags.aoe-easy-resolve.scaleMode" style="flex: 2;">
-            <option value="none" {{#if scaleNone}}selected{{/if}}>None</option>
-            <option value="spellRank" {{#if scaleSpellRank}}selected{{/if}}>Spell Rank (+1)</option>
-            <option value="cantrip" {{#if scaleCantrip}}selected{{/if}}>Cantrip Rank (+1)</option>
-            <option value="actorLevel" {{#if scaleActorLevel}}selected{{/if}}>Actor Level (+1)</option>
-        </select>
-    </div>
-    <p class="notes">Enter base damage, and optionally add heightening scaling.</p>
-</div>
-
-  <hr style="margin: 5px 0;">
-  <p class="notes"><strong>Basic Save Multipliers</strong></p>
-  <div class="form-group"><label>Crit Success</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalSuccess" value="{{multipliers.criticalSuccess}}" placeholder="0"></div></div>
-  <div class="form-group"><label>Success</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.success" value="{{multipliers.success}}" placeholder="0.5"></div></div>
-  <div class="form-group"><label>Failure</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.failure" value="{{multipliers.failure}}" placeholder="1"></div></div>
-  <div class="form-group"><label>Crit Failure</label><div class="form-fields"><input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalFailure" value="{{multipliers.criticalFailure}}" placeholder="2"></div></div>
-
-  <hr style="margin: 5px 0;">
-  <p class="notes"><strong>Target Matrix & Hazard Settings</strong></p>
-  <div class="form-group">
-    <label>Enemy Base Effect</label>
-    <div class="form-fields">
-      <select name="flags.aoe-easy-resolve.enemyBaseEffect">
-        <option value="standard" {{#if enemyBaseStandard}}selected{{/if}}>Standard (Take Damage)</option>
-        <option value="heal" {{#if enemyBaseHeal}}selected{{/if}}>Healing (Restore HP)</option>
-        <option value="immune" {{#if enemyBaseImmune}}selected{{/if}}>Immune (Ignore Roll)</option>
-      </select>
-    </div>
-  </div>
-  <div class="form-group">
-    <label>Ally Base Effect</label>
-    <div class="form-fields">
-      <select name="flags.aoe-easy-resolve.allyBaseEffect">
-        <option value="standard" {{#if allyBaseStandard}}selected{{/if}}>Standard (Take Damage)</option>
-        <option value="heal" {{#if allyBaseHeal}}selected{{/if}}>Healing (Restore HP)</option>
-        <option value="immune" {{#if allyBaseImmune}}selected{{/if}}>Immune (Ignore Roll)</option>
-      </select>
-    </div>
-  </div>
-  <div class="form-group">
-    <label>Enable Tactical Drawing Tools?</label>
-    <input type="checkbox" name="flags.aoe-easy-resolve.tacticalDrawing" {{checked tacticalDrawing}}>
-    <p class="notes">Adds Freehand and Rectangle drawing tools to the chat card for custom hazard shapes.</p>
-  </div>
-</fieldset>
-
-
-<fieldset style="margin-top: 15px;">
-  <legend>Effect Rules Engine</legend>
-  <p class="notes" style="margin-bottom: 10px;">Define specific triggers based on roll outcomes and target traits.</p>
-  
-  {{#each processedRules as |rule|}}
-  <div style="border: 1px solid #7a7971; padding: 10px; margin-bottom: 10px; position: relative; background: rgba(0,0,0,0.1); border-radius: 3px;">
-    <a class="delete-rule-btn" data-index="{{rule.index}}" style="position: absolute; top: 5px; right: 5px; color: #ff6666; cursor: pointer;" title="Delete Rule"><i class="fas fa-trash"></i></a>
-    
-    <div class="form-group">
-      <label>Trigger</label>
-      <div class="form-fields">
-       <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.context">
-        <option value="attack" {{#if rule.isAttack}}selected{{/if}}>Attack Roll</option>
-        <option value="save" {{#if rule.isSave}}selected{{/if}}>Save Result</option>
-        <option value="reactiveSave" {{#if rule.isReactiveSave}}selected{{/if}}>Reactive Save (Hazard)</option>
-        <option value="tokenEnter" {{#if rule.isTokenEnter}}selected{{/if}}>Token Enters Region</option>
-        <option value="tokenExit" {{#if rule.isTokenExit}}selected{{/if}}>Token Exits Region</option>
-        <option value="tokenMove" {{#if rule.isTokenMove}}selected{{/if}}>Moves Within Region</option>
-        <option value="turnStart" {{#if rule.isTurnStart}}selected{{/if}}>Start of Turn</option>
-        <option value="turnEnd" {{#if rule.isTurnEnd}}selected{{/if}}>End of Turn</option>
-        </select>
-        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.outcome">
-          <option value="always" {{#if rule.isAlways}}selected{{/if}}>Always (Passive / Enter)</option>
-          <option value="criticalSuccess" {{#if rule.isCS}}selected{{/if}}>Crit / Crit Success</option>
-          <option value="success" {{#if rule.isS}}selected{{/if}}>Hit / Success</option>
-          <option value="successOrBetter" {{#if rule.isSuccessOrBetter}}selected{{/if}}>Success or Better</option>
-          <option value="failure" {{#if rule.isF}}selected{{/if}}>Miss / Failure</option>
-          <option value="failOrWorse" {{#if rule.isFailOrWorse}}selected{{/if}}>Failure or Worse</option>
-          <option value="criticalFailure" {{#if rule.isCF}}selected{{/if}}>Crit Miss / Crit Fail</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Target Scope</label>
-      <div class="form-fields">
-        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.alliance">
-          <option value="all" {{#if rule.isAllianceAll}}selected{{/if}}>Affects Everyone</option>
-          <option value="enemy" {{#if rule.isAllianceEnemy}}selected{{/if}}>Enemies Only</option>
-          <option value="ally" {{#if rule.isAllianceAlly}}selected{{/if}}>Allies Only</option>
-        </select>
-      </div>
-    </div>
-    
-    <div class="form-group">
-      <label>Target Trait Requirement</label>
-      <div class="form-fields">
-        <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.trait" value="{{rule.trait}}" placeholder="e.g. plant (leave blank for any target)">
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>Condition UUID</label>
-      <div class="form-fields">
-        <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.conditionUuid" value="{{rule.conditionUuid}}" placeholder="Compendium.pf2e...">
-      </div>
-    </div>
-    <label style="display: flex; align-items: center; gap: 4px; font-size: 0.9em; margin-top: 4px;">
-        <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.removeOnExit" {{checked rule.removeOnExit}}>
-        Remove on Exit
-    </label>
-    <div class="form-group">
-        <label>Prompt Reactive Save?</label>
-        <input type="checkbox" name="flags.aoe-easy-resolve.rules.{{rule.index}}.promptSave" {{#if rule.promptSave}}checked{{/if}}>
-        <p class="notes">If checked, this rule will generate a new save card for the token instead of applying an effect.</p>
-    </div>
-    <div class="form-group">
-      <label>Bonus Damage</label>
-      <div class="form-fields">
-        <input type="text" name="flags.aoe-easy-resolve.rules.{{rule.index}}.damageFormula" value="{{rule.damageFormula}}" placeholder="e.g. 1d6" style="width: 50%;">
-        <select name="flags.aoe-easy-resolve.rules.{{rule.index}}.damageType" style="width: 50%;">
-          {{#each rule.damageTypeOptions}}
-            <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
-          {{/each}}
-        </select>
-      </div>
-    </div>
-  </div>
-  {{/each}}
-
-  <button type="button" class="add-rule-btn" style="margin-top: 5px;"><i class="fas fa-plus"></i> Add New Rule</button>
-</fieldset>
