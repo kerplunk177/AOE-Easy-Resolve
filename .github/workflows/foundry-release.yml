@@ -1,0 +1,28 @@
+name: Publish to Foundry
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify-foundry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send API Request
+        run: |
+          curl -X POST "https://foundryvtt.com/_api/packages/release_version/" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: ${{ secrets.FOUNDRY_TOKEN }}" \
+          -d '{
+            "id": "aoe-easy-resolve",
+            "dry-run": false,
+            "release": {
+              "version": "${{ github.event.release.tag_name }}",
+              "manifest": "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/module.json",
+              "notes": "https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }}",
+              "compatibility": {
+                "minimum": "14",
+                "verified": "14",
+                "maximum": "14"
+              }
+            }
+          }'
