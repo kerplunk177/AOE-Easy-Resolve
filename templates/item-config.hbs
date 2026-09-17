@@ -1,48 +1,37 @@
 <div>
-    <style>
-      .aoe-app-nav { display: flex; border-bottom: 1px solid #7a7971; margin-bottom: 15px; }
-      .aoe-app-nav a { padding: 8px 15px; cursor: pointer; border: 1px solid transparent; border-bottom: none; font-size: 1.1em; }
-      .aoe-app-nav a:hover { background: rgba(0,0,0,0.05); }
-      .aoe-app-nav a.active { border-color: #7a7971; background: rgba(0,0,0,0.1); border-radius: 4px 4px 0 0; font-weight: bold; }
-      .tab-content .tab { display: none; padding: 5px; }
-      .tab-content .tab.active { display: block; }
-      .rule-card { border: 1px solid #7a7971; padding: 10px; margin-bottom: 10px; background: rgba(0,0,0,0.05); border-radius: 4px; position: relative; }
-    </style>
-
     {{#if isWizard}}
     <div style="padding: 10px 20px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h2 style="margin: 0; border: none;"><i class="fas fa-magic" style="color: #9b59b6;"></i> Effect Wizard</h2>
-            <div style="width: 50%; height: 8px; background: rgba(0,0,0,0.1); border-radius: 4px; overflow: hidden;">
-                <div class="wizard-progress-bar" style="height: 100%; background: #9b59b6; width: 0%; transition: width 0.3s ease;"></div>
+            <h2 style="margin: 0; border: none;"><i class="fas fa-magic" style="color: var(--aer-accent-purple);"></i> {{localize "AOE.Config.WizardTitle"}}</h2>
+            <div class="aer-wizard-progress-bg">
+                <div class="aer-wizard-progress-bar" style="width: 0%;"></div>
             </div>
         </div>
 
-        <div class="wizard-content" style="min-height: 450px; background: rgba(0,0,0,0.03); border: 1px solid #7a7971; border-radius: 4px; padding: 15px;">
-            
-            <!-- STEP 1: SHAPE -->
+        <div class="aer-wizard-content">
+            <!-- STEP 1 -->
             <div class="wizard-step" data-step="1">
-                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 1: Geometry & Targeting</h3>
-                <p class="notes">How do you target creatures with this effect?</p>
+                <h3 class="aer-step-header">{{localize "AOE.Config.Step1Title"}}</h3>
+                <p class="aer-notes">{{localize "AOE.Config.Step1Notes"}}</p>
                 
                 <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;">
+                    <label class="aer-radio-box">
                         <input type="radio" name="wizardShape" value="normal" {{#if provideTemplate}}checked{{/if}}>
-                        <strong>Standard Template</strong> (Bursts, Cones, and Lines)
+                        <strong>{{localize "AOE.Config.ShapeNormal"}}</strong> {{localize "AOE.Config.ShapeNormalSub"}}
                     </label>
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;">
+                    <label class="aer-radio-box">
                         <input type="radio" name="wizardShape" value="multi" {{#if enableMultiTarget}}checked{{/if}}>
-                        <strong>Targeted Multi-Strike</strong> (No template, fires directly at targeted tokens)
+                        <strong>{{localize "AOE.Config.ShapeMulti"}}</strong> {{localize "AOE.Config.ShapeMultiSub"}}
                     </label>
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;">
+                    <label class="aer-radio-box">
                         <input type="radio" name="wizardShape" value="tactical" {{#if tacticalDrawing}}checked{{/if}}>
-                        <strong>Tactical & Freehand</strong> (Draw contiguous squares or weird organic zones)
+                        <strong>{{localize "AOE.Config.ShapeTactical"}}</strong> {{localize "AOE.Config.ShapeTacticalSub"}}
                     </label>
                 </div>
 
-                <div class="wizard-normal-settings" style="display: {{#if provideTemplate}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                <div class="wizard-normal-settings aer-sub-settings" style="display: {{#if provideTemplate}}block{{else}}none{{/if}};">
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-weight: bold; flex: 0 0 120px;">Shape & Size</label>
+                        <label style="font-weight: bold; flex: 0 0 120px;">{{localize "AOE.Config.ShapeSize"}}</label>
                         <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
                             <select name="flags.aoe-easy-resolve.templateType" style="flex: 2; padding: 4px;">
                                 <option value="circle" {{#if isCircle}}selected{{/if}}>Burst</option>
@@ -54,34 +43,33 @@
                         </div>
                     </div>
                 </div>
-                <div class="wizard-tactical-settings" style="display: {{#if tacticalDrawing}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                <div class="wizard-tactical-settings aer-sub-settings" style="display: {{#if tacticalDrawing}}block{{else}}none{{/if}};">
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-weight: bold; flex: 0 0 180px;">Max Contiguous Squares</label>
+                        <label style="font-weight: bold; flex: 0 0 180px;">{{localize "AOE.Config.MaxSquares"}}</label>
                         <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
                             <input type="number" name="flags.aoe-easy-resolve.tacticalBlocks" value="{{tacticalBlocks}}" placeholder="e.g. 4" style="flex: 1; text-align: center; padding: 4px;">
-                            <span style="font-weight: bold; color: #555;">squares</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- STEP 2: SAVE -->
+            <!-- STEP 2 -->
             <div class="wizard-step" data-step="2" style="display: none;">
-                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 2: The Initial Save</h3>
-                <p class="notes">Does the initial impact force a saving throw?</p>
+                <h3 class="aer-step-header">{{localize "AOE.Config.Step2Title"}}</h3>
+                <p class="aer-notes">{{localize "AOE.Config.Step2Notes"}}</p>
                 
                 <div style="display: flex; gap: 15px; margin-top: 15px;">
-                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; cursor: pointer;">
-                        <input type="radio" name="wizardSave" value="yes" {{#if useOverride}}checked{{/if}}> Yes, prompt a Save
+                    <label class="aer-radio-box" style="flex: 1; justify-content: center;">
+                        <input type="radio" name="wizardSave" value="yes" {{#if useOverride}}checked{{/if}}> {{localize "AOE.Config.SaveYes"}}
                     </label>
-                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 4px; cursor: pointer;">
-                        <input type="radio" name="wizardSave" value="no" {{#unless useOverride}}checked{{/unless}}> No Save (Auto-hit or Utility)
+                    <label class="aer-radio-box" style="flex: 1; justify-content: center;">
+                        <input type="radio" name="wizardSave" value="no" {{#unless useOverride}}checked{{/unless}}> {{localize "AOE.Config.SaveNo"}}
                     </label>
                 </div>
 
-                <div class="wizard-save-settings" style="display: {{#if useOverride}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
+                <div class="wizard-save-settings aer-sub-settings" style="display: {{#if useOverride}}block{{else}}none{{/if}};">
                     <div class="form-group" style="margin-bottom: 10px;">
-                        <label style="font-weight: bold; flex: 0 0 120px;">Save Type</label>
+                        <label style="font-weight: bold; flex: 0 0 120px;">{{localize "AOE.Config.SaveType"}}</label>
                         <div class="form-fields">
                             <select name="flags.aoe-easy-resolve.saveType" style="padding: 4px;">
                                 <option value="fortitude" {{#if isFort}}selected{{/if}}>Fortitude</option>
@@ -91,7 +79,7 @@
                         </div>
                     </div>
                     <div class="form-group" style="margin-bottom: 0;">
-                        <label style="font-weight: bold; flex: 0 0 120px;">Target DC</label>
+                        <label style="font-weight: bold; flex: 0 0 120px;">{{localize "AOE.Config.TargetDC"}}</label>
                         <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
                             <select name="flags.aoe-easy-resolve.dcType" style="flex: 2; padding: 4px;">
                                 <option value="highest" {{#if isHighestDC}}selected{{/if}}>Highest of Caster</option>
@@ -105,22 +93,21 @@
                 </div>
             </div>
 
-            <!-- STEP 3: EFFECTS -->
+            <!-- STEP 3 -->
             <div class="wizard-step" data-step="3" style="display: none;">
-                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 3: Condition Effects</h3>
-                <p class="notes">Does the hazard apply specific conditions (like Frightened or Prone) based on the save?</p>
+                <h3 class="aer-step-header">{{localize "AOE.Config.Step3Title"}}</h3>
+                <p class="aer-notes">{{localize "AOE.Config.Step3Notes"}}</p>
                 
                 <div class="form-group" style="margin-top: 15px; align-items: center;">
-                    <label style="font-weight: bold; flex: 0 0 200px;">Apply Condition Effects?</label>
+                    <label style="font-weight: bold; flex: 0 0 200px;">{{localize "AOE.Config.ApplyEffects"}}</label>
                     <div class="form-fields">
                         <input type="checkbox" name="flags.aoe-easy-resolve.useWizardEffects" {{checked useWizardEffects}} style="width: 20px; height: 20px;">
                     </div>
                 </div>
 
-                <div class="wizard-effects-settings" style="display: {{#if useWizardEffects}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
-                    
-                    <div style="display: flex; gap: 8px; font-size: 0.8em; font-weight: bold; color: #555; margin-bottom: 4px; padding-right: 28px;">
-                        <span style="flex: 0 0 100px;">Trigger</span>
+                <div class="wizard-effects-settings aer-sub-settings" style="display: {{#if useWizardEffects}}block{{else}}none{{/if}};">
+                    <div style="display: flex; gap: 8px; font-size: 0.8em; font-weight: bold; color: var(--aer-text-muted); margin-bottom: 4px; padding-right: 28px;">
+                        <span style="flex: 0 0 120px;">Trigger</span>
                         <span style="width: 15px;"></span>
                         <span style="flex: 2;">Condition</span>
                         <span style="flex: 0 0 40px; text-align: center;">Val</span>
@@ -144,48 +131,45 @@
                             <option value="{{this.key}}" {{this.selected}}>{{this.label}}</option>
                             {{/each}}
                         </select>
-                        <input type="number" name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.value" value="{{effect.value}}" placeholder="Val" style="flex: 0 0 40px; text-align: center;" title="Value (e.g. 1 for Frightened 1)">
-                        <input type="number" name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.duration" value="{{effect.duration}}" placeholder="Rnds" style="flex: 0 0 50px; text-align: center;" title="Duration in Rounds (leave blank for default)">
-                        <a data-action="deleteWizardEffect" data-index="{{effect.index}}" style="color: #e74c3c; cursor: pointer; padding: 4px;"><i class="fas fa-times"></i></a>
+                        <input type="number" name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.value" value="{{effect.value}}" placeholder="Val" style="flex: 0 0 40px; text-align: center;">
+                        <input type="number" name="flags.aoe-easy-resolve.wizardEffects.{{effect.index}}.duration" value="{{effect.duration}}" placeholder="Rnds" style="flex: 0 0 50px; text-align: center;">
+                        <a data-action="deleteWizardEffect" data-index="{{effect.index}}" style="color: var(--aer-danger); cursor: pointer; padding: 4px;"><i class="fas fa-times"></i></a>
                     </div>
                     {{/each}}
-                    
-                    <button type="button" data-action="addWizardEffect" style="margin-top: 10px; background: rgba(0,0,0,0.05); border: 1px dashed #7a7971;"><i class="fas fa-plus"></i> Add Effect</button>
+                    <button type="button" data-action="addWizardEffect" style="margin-top: 10px; background: var(--aer-bg-faint); border: 1px dashed var(--aer-border);"><i class="fas fa-plus"></i> {{localize "AOE.Config.AddEffect"}}</button>
                 </div>
                 
-                <div style="margin-top: 20px; padding: 10px; background: rgba(52, 152, 219, 0.1); border: 1px solid rgba(52, 152, 219, 0.3); border-radius: 4px;">
-                    <p style="margin: 0; font-size: 0.9em;"><strong>Note:</strong> You can stack effects (e.g., Prone and Clumsy 2 on a Crit Fail). For complex triggers (like "On Token Enter"), finish the Wizard and check the Advanced Tab.</p>
+                <div class="aer-info-box">
+                    <p style="margin: 0; font-size: 0.9em;"><strong>{{localize "AOE.Config.EffectNote"}}</strong></p>
                 </div>
-              
             </div>
 
-            <!-- STEP 4: INITIAL IMPACT & DAMAGE BUILDER -->
+            <!-- STEP 4 -->
             <div class="wizard-step" data-step="4" style="display: none;">
-                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0;">Step 3: Initial Resolution</h3>
-                <p class="notes">What happens immediately when the hazard hits?</p>
+                <h3 class="aer-step-header">{{localize "AOE.Config.Step4Title"}}</h3>
+                <p class="aer-notes">{{localize "AOE.Config.Step4Notes"}}</p>
 
                 <div class="form-group" style="margin-top: 15px; align-items: center;">
-                    <label style="font-weight: bold; flex: 0 0 200px;">Configure Initial Damage?</label>
+                    <label style="font-weight: bold; flex: 0 0 200px;">{{localize "AOE.Config.ConfigInitDamage"}}</label>
                     <div class="form-fields">
                         <input type="checkbox" name="flags.aoe-easy-resolve.useCustomDamage" {{checked useCustomDamage}} style="width: 20px; height: 20px;">
                     </div>
                 </div>
 
-                <div class="wizard-damage-settings" style="display: {{#if useCustomDamage}}block{{else}}none{{/if}}; margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid #9b59b6; border-radius: 4px;">
-                    
+                <div class="wizard-damage-settings aer-sub-settings" style="display: {{#if useCustomDamage}}block{{else}}none{{/if}};">
                     <div style="display: flex; gap: 15px; margin-bottom: 15px; border-bottom: 1px dashed rgba(0,0,0,0.1); padding-bottom: 10px;">
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: bold;" title="Success = Half Damage, Crit Success = No Damage, Crit Fail = Double Damage">
-                            <input type="checkbox" name="flags.aoe-easy-resolve.isBasicSave" {{checked isBasicSave}}> Basic Saving Throw?
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: bold;">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.isBasicSave" {{checked isBasicSave}}> {{localize "AOE.Config.BasicSave"}}
                         </label>
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: bold;" title="Applies the 'area-effect' and 'damaging-effect' traits to trigger Swarm weaknesses.">
-                            <input type="checkbox" name="flags.aoe-easy-resolve.isAreaDamage" {{checked isAreaDamage}}> Area Damage?
+                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-weight: bold;">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.isAreaDamage" {{checked isAreaDamage}}> {{localize "AOE.Config.AreaDamage"}}
                         </label>
                     </div>
 
-                    <p class="notes" style="margin-bottom: 10px; font-weight: bold; color: #333;">Damage Dice</p>
+                    <p class="aer-notes" style="margin-bottom: 10px; font-weight: bold; color: var(--color-text-dark-primary);">{{localize "AOE.Config.DamageDice"}}</p>
 
                     {{#each mappedDamageParts as |part|}}
-                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px; position: relative;">
+                    <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
                         <input type="number" name="flags.aoe-easy-resolve.damageParts.{{part.index}}.dice" value="{{part.dice}}" placeholder="#" style="flex: 0 0 50px; text-align: center;">
                         <select name="flags.aoe-easy-resolve.damageParts.{{part.index}}.die" style="flex: 0 0 60px;">
                             {{#each part.dieOptions}}
@@ -198,55 +182,47 @@
                             {{/each}}
                         </select>
                         {{#if part.index}}
-                            <a data-action="deleteDamagePart" data-index="{{part.index}}" style="color: #e74c3c; cursor: pointer; padding: 4px;" title="Remove Type"><i class="fas fa-times"></i></a>
+                            <a data-action="deleteDamagePart" data-index="{{part.index}}" style="color: var(--aer-danger); cursor: pointer; padding: 4px;"><i class="fas fa-times"></i></a>
                         {{/if}}
                     </div>
                     {{/each}}
                     
-                    <button type="button" data-action="addDamagePart" style="margin-top: 10px; background: rgba(0,0,0,0.05); border: 1px dashed #7a7971;"><i class="fas fa-plus"></i> Add Damage Type</button>
-
+                    <button type="button" data-action="addDamagePart" style="margin-top: 10px; background: var(--aer-bg-faint); border: 1px dashed var(--aer-border);"><i class="fas fa-plus"></i> {{localize "AOE.Config.AddDamage"}}</button>
                 </div>
-
-                <script>
-                    document.querySelector("input[name='flags.aoe-easy-resolve.useCustomDamage']")?.addEventListener("change", (e) => {
-                        const container = document.querySelector(".wizard-damage-settings");
-                        if (container) container.style.display = e.target.checked ? "block" : "none";
-                    });
-                </script>
             </div>
 
-            <!-- STEP 4: PERSISTENCE -->
+            <!-- STEP 5 -->
             <div class="wizard-step" data-step="5" style="display: none;">
-                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px;">Step 4: Persistence</h3>
-                <p class="notes">Does the effect stay on the battlefield, or does it fade instantly?</p>
+                <h3 class="aer-step-header">{{localize "AOE.Config.Step5Title"}}</h3>
+                <p class="aer-notes">{{localize "AOE.Config.Step5Notes"}}</p>
 
                 <div style="display: flex; gap: 15px; margin-top: 15px;">
-                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 4px; cursor: pointer;">
-                        <input type="radio" name="wizardPersist" value="no" {{#unless hazardDuration}}checked{{/unless}}> Fades Immediately
+                    <label class="aer-radio-box" style="flex: 1; justify-content: center;">
+                        <input type="radio" name="wizardPersist" value="no" {{#unless hazardDuration}}checked{{/unless}}> {{localize "AOE.Config.PersistNo"}}
                     </label>
-                    <label style="flex: 1; text-align: center; padding: 15px; background: rgba(0,0,0,0.05); border-radius: 4px; cursor: pointer;">
-                        <input type="radio" name="wizardPersist" value="yes" {{#if hazardDuration}}checked{{/if}}> Lingers as a Zone
+                    <label class="aer-radio-box" style="flex: 1; justify-content: center;">
+                        <input type="radio" name="wizardPersist" value="yes" {{#if hazardDuration}}checked{{/if}}> {{localize "AOE.Config.PersistYes"}}
                     </label>
                 </div>
 
-                <div class="wizard-persist-settings" style="display: {{#if hazardDuration}}block{{else}}none{{/if}}; margin-top: 15px; padding: 10px; border-left: 3px solid #9b59b6;">
+                <div class="wizard-persist-settings aer-sub-settings" style="display: {{#if hazardDuration}}block{{else}}none{{/if}}; border-left-color: var(--aer-accent-purple);">
                     <div class="form-group">
-                        <label>How long? (Combat Rounds)</label>
+                        <label>{{localize "AOE.Config.DurationLabel"}}</label>
                         <div class="form-fields">
-                            <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="Leave blank for infinite" />
+                            <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" />
                         </div>
-                        <p class="notes">The system will automatically delete the hazard when time is up.</p>
+                        <p class="aer-notes">{{localize "AOE.Config.DurationNotes"}}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- STEP 5: HAZARD PURPOSE -->
+            <!-- STEP 6 -->
             <div class="wizard-step" data-step="6" style="display: none;">
-                <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px;">Step 5: Hazard Zone Behavior</h3>
-                <p class="notes">If the zone lingers, what does it do to creatures inside it?</p>
+                <h3 class="aer-step-header">{{localize "AOE.Config.Step6Title"}}</h3>
+                <p class="aer-notes">{{localize "AOE.Config.Step6Notes"}}</p>
 
                 <div class="form-group" style="margin-top: 15px;">
-                    <label>Difficult Terrain?</label>
+                    <label>{{localize "AOE.Config.TerrainEffect"}}</label>
                     <div class="form-fields">
                         <select name="flags.aoe-easy-resolve.terrainEffect" style="flex: 1;">
                             <option value="none" {{#if terrainNone}}selected{{/if}}>None (Normal Terrain)</option>
@@ -256,29 +232,28 @@
                     </div>
                 </div>
 
-                <div style="margin-top: 20px; padding: 10px; background: rgba(231, 76, 60, 0.1); border: 1px solid rgba(231, 76, 60, 0.3); border-radius: 4px;">
-                    <p style="margin: 0; font-size: 0.9em;"><strong>Advanced Mode Required:</strong> Setting up "Reactive Saves on Enter" or "Additional Damage on Turn End" requires the Rules Engine. Switch to the Advanced Tab to add these specific triggers.</p>
+                <div class="aer-danger-box">
+                    <p style="margin: 0; font-size: 0.9em;"><strong>{{localize "AOE.Config.AdvancedWarning"}}</strong></p>
                 </div>
             </div>
 
         </div>
 
-        <!-- WIZARD CONTROLS -->
         <div style="display: flex; justify-content: space-between; margin-top: 15px;">
             <button type="button" class="wizard-prev" style="width: auto; padding: 0 15px; display: none;"><i class="fas fa-arrow-left"></i> Back</button>
             <div style="flex: 1;"></div>
             <button type="button" class="wizard-next" style="width: auto; padding: 0 15px;"><i class="fas fa-arrow-right"></i> Next</button>
-            <button type="submit" class="wizard-save" style="width: auto; padding: 0 15px; display: none; background: #9b59b6; color: white; border: none;"><i class="fas fa-save"></i> Save Configuration</button>
+            <button type="submit" class="wizard-save" style="width: auto; padding: 0 15px; display: none; background: var(--aer-accent-purple); color: white; border: none;"><i class="fas fa-save"></i> {{localize "AOE.Config.SaveBtn"}}</button>
         </div>
     </div>
-{{else}}
-        <nav class="aoe-app-nav sheet-tabs">
-            <a class="item" data-tab="blast"><i class="fas fa-fire"></i> Blast & Math</a>
-            <a class="item" data-tab="zone"><i class="fas fa-map"></i> Environment</a>
-            <a class="item" data-tab="rules"><i class="fas fa-clipboard-list"></i> Rules Engine</a>
+    {{else}}
+        <nav class="aer-app-nav sheet-tabs">
+            <a class="item" data-tab="blast"><i class="fas fa-fire"></i> {{localize "AOE.Config.TabBlast"}}</a>
+            <a class="item" data-tab="zone"><i class="fas fa-map"></i> {{localize "AOE.Config.TabZone"}}</a>
+            <a class="item" data-tab="rules"><i class="fas fa-clipboard-list"></i> {{localize "AOE.Config.TabRules"}}</a>
         </nav>
 
-        <section class="tab-content" style="height: calc(100% - 100px); overflow-y: auto;">
+        <section class="aer-tab-content" style="height: calc(100% - 100px); overflow-y: auto;">
             
             <!-- TAB 1: BLAST & MATH -->
             <div class="tab" data-tab="blast">
@@ -286,7 +261,7 @@
                 <label style="font-weight: bold; flex: 0 0 160px;">Override System Save?</label>
                 <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
                     <input type="checkbox" name="flags.aoe-easy-resolve.useOverride" {{checked useOverride}}>
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.9em; border-left: 1px solid #ccc; padding-left: 15px;">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.9em; border-left: 1px solid var(--aer-border); padding-left: 15px;">
                         <input type="checkbox" name="flags.aoe-easy-resolve.isBasicSave" {{checked isBasicSave}}> Basic Save Math?
                     </label>
                 </div>
@@ -315,7 +290,7 @@
                 </div>
 
                 <hr style="margin: 15px 0;">
-                <p class="notes" style="font-weight: bold;">Geometry & Targeting</p>
+                <p class="aer-notes" style="font-weight: bold;">Geometry & Targeting</p>
 
                 <div class="form-group">
                     <label>Provide Custom Template?</label>
@@ -348,7 +323,7 @@
                 </div>
 
                 <hr style="margin: 15px 0;">
-                <p class="notes" style="font-weight: bold;">Damage Overrides</p>
+                <p class="aer-notes" style="font-weight: bold;">Damage Overrides</p>
 
                 <div class="form-group">
                     <label>Use Custom Damage Builder?</label>
@@ -359,9 +334,9 @@
                     <label>Formula</label>
                     <div class="form-fields" style="display: flex; align-items: center; gap: 5px;">
                         <input type="text" name="flags.aoe-easy-resolve.baseDamage" value="{{baseDamage}}" placeholder="e.g. 2d6" style="flex: 2;" />
-                        <span style="font-weight: bold; color: #888;">+</span>
+                        <span style="font-weight: bold; color: var(--aer-text-muted);">+</span>
                         <input type="text" name="flags.aoe-easy-resolve.scaleDamage" value="{{scaleDamage}}" placeholder="1d6" style="flex: 1;" />
-                        <span style="font-weight: bold; color: #888;">per</span>
+                        <span style="font-weight: bold; color: var(--aer-text-muted);">per</span>
                         <select name="flags.aoe-easy-resolve.scaleMode" style="flex: 2;">
                             <option value="none" {{#if scaleNone}}selected{{/if}}>None</option>
                             <option value="spellRank" {{#if scaleSpellRank}}selected{{/if}}>Spell Rank (+1)</option>
@@ -380,7 +355,7 @@
                     <div class="form-fields">
                         <input type="number" name="flags.aoe-easy-resolve.hazardDuration" value="{{hazardDuration}}" placeholder="e.g. 1 (Rounds)" />
                     </div>
-                    <p class="notes">Leave blank for infinite. Swept automatically by the Janitor.</p>
+                    <p class="aer-notes">Leave blank for infinite. Swept automatically by the Janitor.</p>
                 </div>
 
                 <div class="form-group">
@@ -395,7 +370,7 @@
                 </div>
 
                 <hr style="margin: 15px 0;">
-                <p class="notes" style="font-weight: bold;">Alliance Matrix</p>
+                <p class="aer-notes" style="font-weight: bold;">Alliance Matrix</p>
 
                 <div class="form-group">
                     <label>Enemy Base Effect</label>
@@ -422,17 +397,17 @@
                     <div class="form-fields">
                         <input type="checkbox" name="flags.aoe-easy-resolve.isAreaDamage" {{checked isAreaDamage}}>
                     </div>
-                    <p class="notes">Forces the 'area-effect' and 'damaging-effect' traits to trigger Swarm weaknesses.</p>
+                    <p class="aer-notes">Forces the 'area-effect' and 'damaging-effect' traits to trigger Swarm weaknesses.</p>
                 </div>
             </div>
 
             <!-- TAB 3: RULES ENGINE -->
             <div class="tab" data-tab="rules">
-                <p class="notes" style="margin-bottom: 10px;">Define specific triggers based on roll outcomes and target traits.</p>
+                <p class="aer-notes" style="margin-bottom: 10px;">Define specific triggers based on roll outcomes and target traits.</p>
                 
                 {{#each processedRules as |rule|}}
-                <div class="rule-card">
-                    <a data-action="deleteRule" data-index="{{rule.index}}" style="position: absolute; top: 5px; right: 8px; color: #ff6666; cursor: pointer;" title="Delete Rule"><i class="fas fa-trash"></i></a>
+                <div class="aer-rule-card">
+                    <a data-action="deleteRule" data-index="{{rule.index}}" style="position: absolute; top: 5px; right: 8px; color: var(--aer-danger); cursor: pointer;" title="Delete Rule"><i class="fas fa-trash"></i></a>
                     
                     <div class="form-group">
                         <label>Trigger</label>
@@ -511,8 +486,8 @@
             </div>
         </section>
 
-        <footer style="margin-top: 15px; border-top: 1px solid rgba(0,0,0,0.2); padding-top: 10px; text-align: right;">
-            <button type="submit" style="width: auto; padding: 0 15px;"><i class="fas fa-save"></i> Save Configuration</button>
+        <footer style="margin-top: 15px; border-top: 1px solid var(--aer-border); padding-top: 10px; text-align: right;">
+            <button type="submit" style="width: auto; padding: 0 15px;"><i class="fas fa-save"></i> {{localize "AOE.Config.SaveBtn"}}</button>
         </footer>
     {{/if}}
 </div>

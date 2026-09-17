@@ -707,9 +707,9 @@ async function executeEffectRules(targetsArray, contextStr, outcomeStr, originIt
 
                         const effectBadge = !isNaN(valueInt) ? ` ${valueInt}` : "";
                         const effectRounds = hasDuration ? ` (${durationInt} Rnds)` : "";
-                        const effectMsg = `<span style="color: #9b59b6; font-weight: bold;">+ ${conditionItem.name}${effectBadge}${effectRounds}</span>`;
                         
-                        const visualChip = `<span style="background: rgba(155, 89, 182, 0.15); color: #d2b4de; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; border: 1px solid rgba(155, 89, 182, 0.4); white-space: nowrap; line-height: 1; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">+ ${conditionItem.name}${effectBadge}</span>`;
+                        const effectMsg = `<span style="font-weight: bold; color: var(--aer-accent-purple);">+ ${conditionItem.name}${effectBadge}${effectRounds}</span>`;
+                        const visualChip = `<span class="aer-chip-condition">+ ${conditionItem.name}${effectBadge}</span>`;
 
                         if (window.aoeEasyResolveApplying?.receipt) {
                             let existingEntry = window.aoeEasyResolveApplying.receipt.find(r => r.tokenId === tokenId);
@@ -786,36 +786,15 @@ Hooks.once("init", async function () {
         handleSocketPayload(data);
     });
 
-    const style = document.createElement("style");
-    style.innerHTML = `
-        @keyframes erPulsePlayer {
-            0% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7); border-color: #3498db; }
-            70% { box-shadow: 0 0 0 6px rgba(52, 152, 219, 0); border-color: #2980b9; }
-            100% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0); border-color: #3498db; }
-        }
-        @keyframes erPulseGM {
-            0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); border-color: #e74c3c; }
-            70% { box-shadow: 0 0 0 6px rgba(231, 76, 60, 0); border-color: #c0392b; }
-            100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); border-color: #e74c3c; }
-        }
-        @keyframes erPulseApply {
-            0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); border-color: #2ecc71; }
-            70% { box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); border-color: #27ae60; }
-            100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); border-color: #2ecc71; }
-        }
-        .er-pulse-player { animation: erPulsePlayer 2s infinite; font-weight: bold; color: #fff; background: rgba(52, 152, 219, 0.15); }
-        .er-pulse-gm { animation: erPulseGM 2s infinite; font-weight: bold; color: #fff; background: rgba(231, 76, 60, 0.15); }
-        .er-pulse-apply { animation: erPulseApply 2s infinite; font-weight: bold; color: #fff; background: rgba(46, 204, 113, 0.15); }
-    `;
-    document.head.appendChild(style);
+    
 
-    game.settings.register(MODULE_ID, "promptUntypedTemplates", {
-        name: "Prompt Saves for Manual Templates",
-        hint: "When the GM draws a measured template from the sidebar, prompt them to create a custom AoE save card.",
-        scope: "world",
+    game.settings.register(MODULE_ID, "defaultToWizard", {
+        name: "Default Config to Wizard",
+        hint: "When opening the item config, default to the guided Wizard setup instead of the Advanced Tab.",
+        scope: "client",
         config: true,
         type: Boolean,
-        default: false
+        default: true
     });
     loadTemplates([`modules/${MODULE_ID}/templates/chat-card.hbs`, `modules/${MODULE_ID}/templates/item-config.hbs`]);
 });
@@ -941,14 +920,14 @@ class AoEItemConfigApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }));
 
         return {
-            isWizard: flags.wizardMode ?? true, 
+            isWizard: flags.wizardMode ?? game.settings.get(MODULE_ID, "defaultToWizard"), 
             isBasicSave: flags.isBasicSave ?? true, 
             mappedWizardEffects: mappedWizardEffects,
             useWizardEffects: flags.useWizardEffects || false,
             mappedDamageParts: mappedDamageParts,
             ignoreAoE: flags.ignoreAoE || false,
             enableMultiTarget: flags.enableMultiTarget || false,
-            isAreaDamage: flags.isAreaDamage || true,
+            isAreaDamage: flags.isAreaDamage || false,
             useOverride: flags.useOverride || false,
             provideTemplate: flags.provideTemplate || false,
             isCone: flags.templateType === "cone" || !flags.templateType,
@@ -998,16 +977,16 @@ class AoEItemConfigApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const html = this.element;
         
         // --- ADVANCED TAB ROUTER ---
-        html.querySelectorAll(".aoe-app-nav a.item").forEach(t => {
+        html.querySelectorAll(".aer-app-nav a.item").forEach(t => {
             t.addEventListener("click", (ev) => {
                 const tabName = ev.currentTarget.dataset.tab;
-                html.querySelectorAll(".aoe-app-nav a.item").forEach(i => i.classList.remove("active"));
-                html.querySelectorAll(".tab-content .tab").forEach(c => c.classList.remove("active"));
+                html.querySelectorAll(".aer-app-nav a.item").forEach(i => i.classList.remove("active"));
+                html.querySelectorAll(".aer-tab-content .tab").forEach(c => c.classList.remove("active"));
                 ev.currentTarget.classList.add("active");
-                html.querySelector(`.tab-content .tab[data-tab='${tabName}']`).classList.add("active");
+                html.querySelector(`.aer-tab-content .tab[data-tab='${tabName}']`).classList.add("active");
             });
         });
-        html.querySelector(".aoe-app-nav a.item")?.click();
+        html.querySelector(".aer-app-nav a.item")?.click();
 
         // --- WIZARD LOGIC ---
         if (context.isWizard) {
@@ -1024,7 +1003,7 @@ class AoEItemConfigApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 html.querySelector(".wizard-save").style.display = this._wizardStep === totalSteps ? "inline-block" : "none";
 
                 const progress = ((this._wizardStep - 1) / (totalSteps - 1)) * 100;
-                html.querySelector(".wizard-progress-bar").style.width = `${progress}%`;
+                html.querySelector(".aer-wizard-progress-bar").style.width = `${progress}%`;
             };
 
             html.querySelector(".wizard-next").addEventListener("click", () => {
@@ -1823,7 +1802,7 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
         const targetData = aoeData.targets[tokenId];
 
         if (targetData && !targetData.hasRolled) {
-            btn.addClass("er-pulse-player");
+            btn.addClass("aer-pulse-player");
         }
 
         if (!isGM) {
@@ -1853,9 +1832,9 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
                                   (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0) || 
                                   (aoeFlags.useCustomDamage && aoeFlags.baseDamage);
 
-            if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
-                $html.find(".roll-damage-btn").addClass("er-pulse-gm");
-            }
+                                  if (itemHasDamage && (aoeData.damageTotal === undefined || aoeData.damageTotal === null)) {
+                                    $html.find(".roll-damage-btn").addClass("aer-pulse-gm");
+                                }
 
             let hasUnappliedTargets = false;
             for (const target of Object.values(aoeData.targets || {})) {
@@ -1867,7 +1846,7 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
 
             if (hasUnappliedTargets) {
                 if (!itemHasDamage || (aoeData.damageTotal !== undefined && aoeData.damageTotal !== null)) {
-                    $html.find(".apply-damage-btn").addClass("er-pulse-apply");
+                    $html.find(".apply-damage-btn").addClass("aer-pulse-apply");
                 }
             }
         })();
@@ -2244,16 +2223,16 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
             const tokenId = el.dataset.tokenId;
             const targetData = aoeData.targets[tokenId];
             if (targetData && targetData.hasRolled) {
-                const coverActive = targetData.hasCover ? "color: #fff; background: #3498db; border-color: #3498db;" : "color: #7a7971; background: rgba(0,0,0,0.1); border: 1px solid #7a7971;";
-                const coverHtml = `<button type="button" class="er-cover-btn" data-token-id="${tokenId}" title="Toggle Take Cover (+2)" style="flex: 0 0 30px; margin-left: 4px; ${coverActive}"><i class="fas fa-shield-alt"></i></button>`;
-                if ($(el).siblings('.er-cover-btn').length === 0) {
-                    $(el).after(coverHtml);
+                const coverActive = targetData.hasCover ? "aer-cover-active" : "";
+                const coverHtml = `<button type="button" class="aer-cover-btn ${coverActive}" data-token-id="${tokenId}" title="Toggle Take Cover (+2)"><i class="fas fa-shield-alt"></i></button>`;
+                
+                if ($(el).siblings('.aer-cover-btn').length === 0) {$(el).after(coverHtml);
                 }
             }
         });
     }
 
-    $html.find(".er-cover-btn").off("click").on("click", async (event) => {
+    $html.find(".aer-cover-btn").off("click").on("click", async (event) => {
         event.preventDefault();
         const tokenId = event.currentTarget.dataset.tokenId;
         const token = canvas.tokens.get(tokenId);
@@ -2720,9 +2699,10 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
                     const safeTooltip = forensicTooltip.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                   let cleanContent = (entry.flavor || "") + " " + (entry.content || "");
                   
-                  cleanContent = cleanContent.replace(/<button[\s\S]*?<\/button>/gi, "");
-                  cleanContent = cleanContent.replace(/<span class="transparent"[\s\S]*?<\/span>/gi, "");
-                  cleanContent = cleanContent.replace(/<span class="statement"[\s\S]*?<\/span>/gi, "");
+                  // THE FIX: Quote-agnostic, multi-tag regex to completely annihilate orphaned revert buttons
+                  cleanContent = cleanContent.replace(/<(button|a)[^>]*data-action=["']?revert-(damage|healing)["']?[^>]*>[\s\S]*?<\/\1>/gi, "");
+                  cleanContent = cleanContent.replace(/<span class=["']?transparent["']?[\s\S]*?<\/span>/gi, "");
+                  cleanContent = cleanContent.replace(/<span class=["']?statement["']?[\s\S]*?<\/span>/gi, "");
                   
                   const escapedName = tokenName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                   cleanContent = cleanContent.replace(new RegExp(escapedName, "i"), "");
@@ -2732,18 +2712,19 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
                   
                   cleanContent = cleanContent.trim();
 
-                  const finalContent = `<div style="display: flex; flex-direction: column; align-items: flex-end; width: 100%;">
-                      <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end; width: 100%; margin-bottom: 3px;">
-                          <span style="font-weight: 500; text-shadow: 1px 1px 1px rgba(0,0,0,0.4);">${cleanContent}</span>
-                          <i class="fas fa-info-circle" data-tooltip="${safeTooltip}" data-tooltip-direction="LEFT" style="color: #7a7971; font-size: 0.95em; cursor: help; flex-shrink: 0;"></i>
+                  const finalContent = `
+                  <div class="aer-receipt-wrapper">
+                      <div class="aer-receipt-main">
+                          <span class="aer-receipt-text">${cleanContent}</span>
+                          <i class="fas fa-info-circle aer-info-icon" data-tooltip="${safeTooltip}" data-tooltip-direction="LEFT" style="color: var(--aer-border); cursor: help; flex-shrink: 0;"></i>
                       </div>
-                      ${entry.appliedConditions && entry.appliedConditions.length > 0 ? `<div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end;">${entry.appliedConditions.join("")}</div>` : ""}
+                      ${entry.appliedConditions && entry.appliedConditions.length > 0 ? `<div class="aer-receipt-chips">${entry.appliedConditions.join("")}</div>` : ""}
                   </div>`;
 
-                   receiptHtml += `<div class="target-row" data-token-id="${entry.tokenId}" style="display: flex; align-items: center; justify-content: space-between; background: ${rowBg}; padding: 4px 6px; border-radius: 4px;">
+                   receiptHtml += `<div class="aer-receipt-row" data-token-id="${entry.tokenId}" data-row-type="${targetData?.isHealing ? 'heal' : (targetData?.degreeOfSuccess || 'none')}">
                         <div style="display: flex; align-items: center; gap: 8px; width: 45%; flex-shrink: 0; padding-right: 6px; border-right: 1px solid rgba(255,255,255,0.1);">
                             <img src="${tokenImg}" width="28" height="28" style="border: none; border-radius: 4px; flex-shrink: 0; object-fit: cover; background: rgba(0,0,0,0.3);" />
-                            <span style="font-weight: bold; line-height: 1.1; word-wrap: break-word;" title="${tokenName}">${tokenName}</span>
+                            <span class="aer-target-name" title="${tokenName}">${tokenName}</span>
                         </div>
                         <div class="receipt-content-wrapper" style="font-size: 0.95em; line-height: 1.2; flex: 1; text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-left: 6px;">
                             ${finalContent}

@@ -1,31 +1,94 @@
-.aoe-easy-resolve-card .target-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 10px 0;
+/* --- BASE MODULE VARIABLES--- */
+:root {
+  --aer-border: var(--color-border-light-primary, #7a7971);
+  --aer-bg-faint: rgba(0, 0, 0, 0.05);
+  --aer-bg-dim: rgba(0, 0, 0, 0.1);
+  --aer-bg-dark: rgba(0, 0, 0, 0.2);
+  --aer-text-muted: var(--color-text-light-highlight, #888);
+  --aer-accent-purple: #9b59b6;
+  --aer-accent-purple-bg: rgba(155, 89, 182, 0.15);
+  --aer-accent-purple-text: #d2b4de;
+  --aer-danger: var(--color-text-dark-error, #ff6b6b);
+  --aer-healing: #4ade80;
+  --aer-btn-bg: rgba(0, 0, 0, 0.1);
 }
 
-.aoe-easy-resolve-card .target-item {
-  align-items: center;
-  margin-bottom: 4px;
-  padding: 4px;
-  background: rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--color-border-light-primary);
-  border-radius: 3px;
+/* --- ANIMATIONS --- */
+@keyframes aerPulsePlayer {
+  0% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0.7); border-color: #3498db; }
+  70% { box-shadow: 0 0 0 6px rgba(52, 152, 219, 0); border-color: #2980b9; }
+  100% { box-shadow: 0 0 0 0 rgba(52, 152, 219, 0); border-color: #3498db; }
+}
+@keyframes aerPulseGM {
+  0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); border-color: #e74c3c; }
+  70% { box-shadow: 0 0 0 6px rgba(231, 76, 60, 0); border-color: #c0392b; }
+  100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); border-color: #e74c3c; }
+}
+@keyframes aerPulseApply {
+  0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); border-color: #2ecc71; }
+  70% { box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); border-color: #27ae60; }
+  100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); border-color: #2ecc71; }
 }
 
-.aoe-easy-resolve-card .target-name {
-  flex: 1;
-  margin-left: 10px;
-  font-weight: bold;
-  line-height: 36px;
-}
+.aer-pulse-player { animation: aerPulsePlayer 2s infinite; font-weight: bold; color: #fff; background: rgba(52, 152, 219, 0.15); }
+.aer-pulse-gm { animation: aerPulseGM 2s infinite; font-weight: bold; color: #fff; background: rgba(231, 76, 60, 0.15); }
+.aer-pulse-apply { animation: aerPulseApply 2s infinite; font-weight: bold; color: #fff; background: rgba(46, 204, 113, 0.15); }
 
-.aoe-easy-resolve-card .target-action {
-  flex: 0 0 80px;
-  text-align: center;
-}
 
+/* --- CHAT CARD STYLING --- */
+.aoe-easy-resolve-card .aer-chat-header { text-align: center; margin-bottom: 10px; border-bottom: 2px solid var(--aer-border); padding-bottom: 5px; }
+.aoe-easy-resolve-card .aer-chat-header h2 { margin: 0; font-size: 1.5em; border: none; }
+.aoe-easy-resolve-card .aer-header-sub { font-weight: bold; font-size: 1.2em; }
+.aoe-easy-resolve-card .aer-damage-roll { margin-top: 5px; font-weight: bold; color: var(--aer-danger); text-shadow: 1px 1px 2px black; font-size: 1.1em; cursor: help; display: block; }
+.aoe-easy-resolve-card .aer-targets-section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.aoe-easy-resolve-card .target-row { display: flex; flex-direction: column; background: var(--aer-bg-dark); padding: 6px; border-radius: 4px; }
+
+/* Degree of Success Colors */
 .aoe-easy-resolve-card .dos-criticalFailure { color: #ff0000; font-weight: bold; text-shadow: 1px 1px 1px black; }
 .aoe-easy-resolve-card .dos-failure { color: #ffcc00; font-weight: bold; text-shadow: 1px 1px 1px black; }
 .aoe-easy-resolve-card .dos-success { color: #0080ff; font-weight: bold; text-shadow: 1px 1px 1px black; }
 .aoe-easy-resolve-card .dos-criticalSuccess { color: #00ff00; font-weight: bold; text-shadow: 1px 1px 1px black; }
+
+/* Status Text */
+.aoe-easy-resolve-card .aer-status-heal { font-weight: bold; color: var(--aer-healing); text-shadow: 1px 1px 2px black; }
+.aoe-easy-resolve-card .aer-status-immune { font-weight: bold; color: var(--aer-text-muted); }
+.aoe-easy-resolve-card .aer-target-name { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Action Buttons */
+.aoe-easy-resolve-card .aer-btn-dos { border: none; background: none; padding: 0; color: var(--aer-text-muted); font-size: 0.8em; cursor: pointer; height: auto; }
+.aoe-easy-resolve-card .aer-hero-point-btn { flex: 0 0 26px; height: 24px; line-height: 24px; padding: 0; color: var(--aer-border); background: var(--aer-btn-bg); border: 1px solid var(--aer-border); }
+.aoe-easy-resolve-card .aer-hero-point-used { color: #d4af37; border-color: #d4af37; background: rgba(212, 175, 55, 0.1); }
+.aoe-easy-resolve-card .aer-cover-btn { flex: 0 0 30px; margin-left: 4px; color: var(--aer-border); background: var(--aer-btn-bg); border: 1px solid var(--aer-border); }
+.aoe-easy-resolve-card .aer-cover-active { color: #fff; background: #3498db; border-color: #3498db; }
+
+/* Receipt Styling */
+.aoe-easy-resolve-card .aer-receipt-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; border-radius: 4px; }
+.aoe-easy-resolve-card .aer-receipt-row[data-row-type="heal"] { background: rgba(46, 204, 113, 0.15); }
+.aoe-easy-resolve-card .aer-receipt-row[data-row-type="criticalSuccess"] { background: rgba(212, 175, 55, 0.15); }
+.aoe-easy-resolve-card .aer-receipt-row[data-row-type="success"] { background: rgba(52, 152, 219, 0.15); }
+.aoe-easy-resolve-card .aer-receipt-row[data-row-type="failure"] { background: rgba(0, 0, 0, 0.4); }
+.aoe-easy-resolve-card .aer-receipt-row[data-row-type="criticalFailure"] { background: rgba(231, 76, 60, 0.15); }
+
+.aoe-easy-resolve-card .aer-receipt-wrapper { display: flex; flex-direction: column; align-items: flex-end; width: 100%; }
+.aoe-easy-resolve-card .aer-receipt-main { display: flex; align-items: center; gap: 6px; justify-content: flex-end; width: 100%; margin-bottom: 3px; }
+.aoe-easy-resolve-card .aer-receipt-text { font-weight: 500; text-shadow: 1px 1px 1px rgba(0,0,0,0.4); }
+.aoe-easy-resolve-card .aer-receipt-chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.aoe-easy-resolve-card .aer-chip-condition { background: var(--aer-accent-purple-bg); color: var(--aer-accent-purple-text); padding: 2px 6px; border-radius: 4px; font-size: 0.8em; border: 1px solid rgba(155, 89, 182, 0.4); white-space: nowrap; line-height: 1; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+/* --- CONFIG APP STYLING --- */
+.aer-app-nav { display: flex; border-bottom: 1px solid var(--aer-border); margin-bottom: 15px; }
+.aer-app-nav a { padding: 8px 15px; cursor: pointer; border: 1px solid transparent; border-bottom: none; font-size: 1.1em; }
+.aer-app-nav a:hover { background: var(--aer-bg-faint); }
+.aer-app-nav a.active { border-color: var(--aer-border); background: var(--aer-bg-dim); border-radius: 4px 4px 0 0; font-weight: bold; }
+.aer-tab-content .tab { display: none; padding: 5px; }
+.aer-tab-content .tab.active { display: block; }
+.aer-rule-card { border: 1px solid var(--aer-border); padding: 10px; margin-bottom: 10px; background: var(--aer-bg-faint); border-radius: 4px; position: relative; }
+.aer-wizard-content { min-height: 450px; background: rgba(0,0,0,0.03); border: 1px solid var(--aer-border); border-radius: 4px; padding: 15px; }
+.aer-wizard-progress-bg { width: 50%; height: 8px; background: var(--aer-bg-dim); border-radius: 4px; overflow: hidden; }
+.aer-wizard-progress-bar { height: 100%; background: var(--aer-accent-purple); transition: width 0.3s ease; }
+.aer-step-header { border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 0; }
+.aer-notes { margin-bottom: 10px; font-size: 0.9em; font-style: italic; color: var(--aer-text-muted); }
+.aer-radio-box { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px; background: var(--aer-bg-faint); border: 1px solid var(--aer-bg-dim); border-radius: 4px; }
+.aer-sub-settings { margin-top: 15px; padding: 15px; background: rgba(0,0,0,0.02); border-left: 4px solid var(--aer-accent-purple); border-radius: 4px; }
+.aer-info-box { margin-top: 20px; padding: 10px; background: rgba(52, 152, 219, 0.1); border: 1px solid rgba(52, 152, 219, 0.3); border-radius: 4px; }
+.aer-danger-box { margin-top: 20px; padding: 10px; background: rgba(231, 76, 60, 0.1); border: 1px solid rgba(231, 76, 60, 0.3); border-radius: 4px; }

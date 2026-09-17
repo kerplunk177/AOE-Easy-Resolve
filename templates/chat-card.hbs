@@ -1,60 +1,60 @@
 <div class="aoe-easy-resolve-card">
-  <header style="text-align: center; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 5px;">
-    <h2 style="margin: 0;">{{itemName}}</h2>
-    <div style="font-weight: bold; font-size: 1.2em;">DC {{saveDC}} {{saveType}} Save</div>
+  <header class="aer-chat-header">
+    <h2>{{itemName}}</h2>
+    <div class="aer-header-sub">{{localize "AOE.Chat.SaveText" dc=saveDC type=saveType}}</div>
     
     {{#if damageTotal}}
-      <div style="margin-top: 5px;">
-        <span class="damage-roll" style="font-weight: bold; color: #ff6b6b; text-shadow: 1px 1px 2px black; font-size: 1.1em;" data-tooltip="{{#if damageTooltip}}{{damageTooltip}}{{else}}{{damageFormula}}{{/if}}" data-tooltip-direction="UP">
-          Damage: {{#if damageBreakdown}}{{damageBreakdown}}{{else}}{{damageTotal}}{{/if}}
+      <div>
+        <span class="aer-damage-roll" data-tooltip="{{#if damageTooltip}}{{damageTooltip}}{{else}}{{damageFormula}}{{/if}}" data-tooltip-direction="UP">
+          {{localize "AOE.Chat.Damage"}} {{#if damageBreakdown}}{{damageBreakdown}}{{else}}{{damageTotal}}{{/if}}
         </span>
       </div>
     {{/if}}
   </header>
 
-  <div class="targets-section" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;">
+  <div class="aer-targets-section">
     {{#each targets}}
-      <div class="target-row" data-token-id="{{id}}" style="display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.2); padding: 6px; border-radius: 4px;">
+      <div class="target-row" data-token-id="{{id}}">
         
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="display: flex; align-items: center; flex: 1; overflow: hidden; padding-right: 8px;">
-            <img src="{{img}}" width="28" height="28" style="border: none; margin-right: 8px; border-radius: 4px;" />
-            <span class="target-name" style="font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{name}}">{{name}}</span>
+            <img class="aer-token-img" src="{{img}}" width="28" height="28" style="border: none; margin-right: 8px; border-radius: 4px;" />
+            <span class="aer-target-name" title="{{name}}">{{name}}</span>
           </div>
           
-          <div class="target-save" style="display: flex; align-items: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
             {{#if isHealing}}
-              <span style="font-weight: bold; color: #4ade80; text-shadow: 1px 1px 2px black;">Healing</span>
+              <span class="aer-status-heal">{{localize "AOE.Chat.Healing"}}</span>
             {{else if isImmune}}
-              <span style="font-weight: bold; color: #9ca3af;">Immune</span>
+              <span class="aer-status-immune">{{localize "AOE.Chat.Immune"}}</span>
             {{else if hasRolled}}
               <span style="font-weight: bold; font-size: 1.1em;" data-tooltip="{{rollTooltip}}" data-tooltip-direction="UP">{{rollTotal}}</span>
               <div style="display: flex; align-items: center; gap: 4px;">
                 {{#if ../isGM}}
-                  <button class="step-dos-btn" data-token-id="{{id}}" data-direction="down" style="border: none; background: none; padding: 0; color: #888; font-size: 0.8em; cursor: pointer; height: auto;" data-tooltip="Decrease Result"><i class="fas fa-chevron-down"></i></button>
+                  <button class="step-dos-btn aer-btn-dos" data-token-id="{{id}}" data-direction="down" data-tooltip="{{localize 'AOE.Chat.DecreaseDos'}}"><i class="fas fa-chevron-down"></i></button>
                 {{/if}}
                 
                 <span style="font-size: 0.9em; color: {{dosColor}}; font-weight: bold; white-space: nowrap;">{{dosLabel}}</span>
                 
                 {{#if ../isGM}}
-                  <button class="step-dos-btn" data-token-id="{{id}}" data-direction="up" style="border: none; background: none; padding: 0; color: #888; font-size: 0.8em; cursor: pointer; height: auto;" data-tooltip="Increase Result"><i class="fas fa-chevron-up"></i></button>
+                  <button class="step-dos-btn aer-btn-dos" data-token-id="{{id}}" data-direction="up" data-tooltip="{{localize 'AOE.Chat.IncreaseDos'}}"><i class="fas fa-chevron-up"></i></button>
                 {{/if}}
               </div>
             {{else}}
               <button class="roll-save-btn" data-token-id="{{id}}" style="padding: 2px 8px; font-size: 0.9em;">
-                <i class="fas fa-dice-d20"></i> Save
+                <i class="fas fa-dice-d20"></i> {{localize "AOE.Chat.SaveBtn"}}
               </button>
             {{/if}}
           </div>
         </div>
 
         {{#if hasRolled}}
-        <div class="button-actions-row" style="display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 6px;">
+        <div style="display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 6px;">
           {{#if showUnadjusted}}
-            <span style="font-size: 0.75em; color: #888; text-decoration: line-through; margin-right: auto;" data-tooltip="Original unadjusted result">{{unadjustedDosLabel}}</span>
+            <span style="font-size: 0.75em; color: #888; text-decoration: line-through; margin-right: auto;" data-tooltip="{{localize 'AOE.Chat.OriginalResult'}}">{{unadjustedDosLabel}}</span>
           {{/if}}
           
-          <button type="button" class="hero-point-btn" data-token-id="{{id}}" title="Use Hero Point" style="flex: 0 0 26px; height: 24px; line-height: 24px; padding: 0; {{#if hasUsedHeroPoint}}color: #d4af37; border-color: #d4af37; background: rgba(212, 175, 55, 0.1);{{else}}color: #7a7971; background: rgba(0,0,0,0.1); border: 1px solid #7a7971;{{/if}}">
+          <button type="button" class="hero-point-btn aer-hero-point-btn {{#if hasUsedHeroPoint}}aer-hero-point-used{{/if}}" data-token-id="{{id}}" title="{{localize 'AOE.Chat.HeroPoint'}}">
             <i class="fas fa-star"></i>
           </button>
         </div>
@@ -64,12 +64,11 @@
     {{/each}}
   </div>
 
-  <div class="gm-controls" style="display: flex; flex-direction: column; gap: 5px; border-top: 1px solid #ccc; padding-top: 10px;">
+  <div class="aer-gm-controls" style="display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--aer-border); padding-top: 10px;">
     <div style="display: flex; gap: 5px;">
-      <button class="roll-all-npcs-btn" style="flex: 1;"><i class="fas fa-users"></i> Roll NPCs</button>
-      <button class="roll-damage-btn" style="flex: 1;"><i class="fas fa-tint"></i> Roll Damage</button>
+      <button class="roll-all-npcs-btn" style="flex: 1;"><i class="fas fa-users"></i> {{localize "AOE.Chat.RollNPCs"}}</button>
+      <button class="roll-damage-btn" style="flex: 1;"><i class="fas fa-tint"></i> {{localize "AOE.Chat.RollDamage"}}</button>
     </div>
-    <button class="apply-damage-btn" style="width: 100%; margin-top: 5px;"><i class="fas fa-heart-broken"></i> Apply Damage & Effects</button>
+    <button class="apply-damage-btn" style="width: 100%; margin-top: 5px;"><i class="fas fa-heart-broken"></i> {{localize "AOE.Chat.ApplyDamage"}}</button>
   </div>
 </div>
-
