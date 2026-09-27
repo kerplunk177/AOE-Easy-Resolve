@@ -1,0 +1,72 @@
+name: Notify Discord on Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Release Notes to Discord Thread
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          THREAD_ID: ${{ secrets.DISCORD_THREAD_ID }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          # Use node to reliably format and escape the JSON payload
+          node -e '
+            const https = require("https");
+
+            const webhookUrl = new URL(process.env.WEBHOOK_URL);
+            if (process.env.THREAD_ID) {
+              webhookUrl.searchParams.set("thread_id", process.env.THREAD_ID);
+            }
+
+            const title = process.env.RELEASE_NAME || process.env.RELEASE_TAG || "New Release";
+            let body = process.env.RELEASE_BODY || "No release notes provided.";
+
+            // Discord embed descriptions cap at 4096 characters
+            if (body.length > 4000) {
+              body = body.slice(0, 3997) + "...";
+            }
+
+            const payload = JSON.stringify({
+              embeds: [{
+                title: title,
+                url: process.env.RELEASE_URL,
+                description: body,
+                color: 5814783, // Nice blurple/blue tone
+                footer: {
+                  text: `Release ${process.env.RELEASE_TAG}`
+                },
+                timestamp: new Date().toISOString()
+              }]
+            });
+
+            const req = https.request(webhookUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(payload)
+              }
+            }, (res) => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                console.log("Successfully posted release to Discord!");
+              } else {
+                console.error(`Discord API returned status: ${res.statusCode}`);
+                process.exit(1);
+              }
+            });
+
+            req.on("error", (e) => {
+              console.error(e);
+              process.exit(1);
+            });
+
+            req.write(payload);
+            req.end();
+          '
