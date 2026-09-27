@@ -3160,7 +3160,18 @@ async function generateTemplateCard(doc, cfg) {
             
             targetedTokens = canvas.tokens.placeables.filter(t => {
                 if (regionObj && typeof regionObj.testPoint === "function") {
-                    return regionObj.testPoint(t.center, t.document.elevation);
+                    const gridSize = canvas.dimensions.size;
+                    const tW = t.document.width || 1;
+                    const tH = t.document.height || 1;
+                    
+                    // Check the center of EVERY grid square the token occupies
+                    for (let w = 0; w < tW; w++) {
+                        for (let h = 0; h < tH; h++) {
+                            const pointX = t.document.x + (w * gridSize) + (gridSize / 2);
+                            const pointY = t.document.y + (h * gridSize) + (gridSize / 2);
+                            if (regionObj.testPoint({ x: pointX, y: pointY }, t.document.elevation)) return true;
+                        }
+                    }
                 }
                 return false;
             });
@@ -3169,25 +3180,33 @@ async function generateTemplateCard(doc, cfg) {
             
             targetedTokens = canvas.tokens.placeables.filter(t => {
                 const templateObj = doc.object || canvas.templates.get(doc.id);
+                const gridSize = canvas.dimensions.size;
+                const tW = t.document.width || 1;
+                const tH = t.document.height || 1;
                 
-                // 1. STANDARD PIXI CHECK (If the local client rendered it in time)
+                // 1. STANDARD PIXI CHECK (Scans all occupied grid squares)
                 if (templateObj && templateObj.shape) {
-                    return templateObj.shape.contains(t.center.x - doc.x, t.center.y - doc.y);
+                    for (let w = 0; w < tW; w++) {
+                        for (let h = 0; h < tH; h++) {
+                            const pointX = t.document.x + (w * gridSize) + (gridSize / 2);
+                            const pointY = t.document.y + (h * gridSize) + (gridSize / 2);
+                            if (templateObj.shape.contains(pointX - doc.x, pointY - doc.y)) return true;
+                        }
+                    }
                 }
                 
                 // 2. SERVER LATENCY FALLBACK (Rescues server-drawn Circles/Emanations)
                 if (doc.t === "circle" && doc.distance) {
-                    const gridSize = canvas.dimensions.size;
                     const radiusPixels = (doc.distance / canvas.dimensions.distance) * gridSize;
                     
-                    // Measure to the closest edge of the token's bounding box, NOT the center
                     const tX = t.document.x;
                     const tY = t.document.y;
-                    const tW = (t.document.width || 1) * gridSize;
-                    const tH = (t.document.height || 1) * gridSize;
+                    const widthPx = tW * gridSize;
+                    const heightPx = tH * gridSize;
                     
-                    const closestX = Math.max(tX, Math.min(doc.x, tX + tW));
-                    const closestY = Math.max(tY, Math.min(doc.y, tY + tH));
+                    // Measure to the closest edge of the token's bounding box
+                    const closestX = Math.max(tX, Math.min(doc.x, tX + widthPx));
+                    const closestY = Math.max(tY, Math.min(doc.y, tY + heightPx));
                     
                     return Math.hypot(doc.x - closestX, doc.y - closestY) <= radiusPixels;
                 }
