@@ -1497,13 +1497,7 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
     const isTactical = flags.tacticalDrawing || false;
     
     const $html = html instanceof jQuery ? html : $(html);
-    $html.find('[data-token-id]').each((i, el) => {
-        const $row = $(el);
-        const tokenId = $row.attr('data-token-id');
-        if (tokenId) {
-            Hooks.callAll("aoeEasyResolve.renderRow", message, $row, tokenId);
-        }
-    });
+    
 
     if (item && !isRollCard) {
         if ($html.find(".er-template-toolbar").length === 0) {
@@ -1789,7 +1783,7 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
     const aoeData = message.flags[MODULE_ID] || {};
     const isGM = game.user.isGM;
 
-    $html.find('[data-token-id]').each((i, el) => {
+    $html.find('[data-token-id]:not(button):not(a)').each((i, el) => {
         const $row = $(el);
         const tokenId = $row.attr('data-token-id');
         Hooks.callAll("aoeEasyResolve.renderRow", message, $row, tokenId);
@@ -2699,7 +2693,6 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
                     const safeTooltip = forensicTooltip.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
                   let cleanContent = (entry.flavor || "") + " " + (entry.content || "");
                   
-                  // THE FIX: Quote-agnostic, multi-tag regex to completely annihilate orphaned revert buttons
                   cleanContent = cleanContent.replace(/<(button|a)[^>]*data-action=["']?revert-(damage|healing)["']?[^>]*>[\s\S]*?<\/\1>/gi, "");
                   cleanContent = cleanContent.replace(/<span class=["']?transparent["']?[\s\S]*?<\/span>/gi, "");
                   cleanContent = cleanContent.replace(/<span class=["']?statement["']?[\s\S]*?<\/span>/gi, "");
@@ -3176,9 +3169,18 @@ async function generateTemplateCard(doc, cfg) {
             
             targetedTokens = canvas.tokens.placeables.filter(t => {
                 const templateObj = doc.object || canvas.templates.get(doc.id);
+                
                 if (templateObj && templateObj.shape) {
                     return templateObj.shape.contains(t.center.x - doc.x, t.center.y - doc.y);
                 }
+                
+                if (doc.t === "circle" && doc.distance) {
+                    const radiusPixels = (doc.distance / canvas.dimensions.distance) * canvas.dimensions.size;
+                    const dx = t.center.x - doc.x;
+                    const dy = t.center.y - doc.y;
+                    return Math.hypot(dx, dy) <= radiusPixels;
+                }
+                
                 return false;
             });
         } else if (cfg.preselectedTargets) {
