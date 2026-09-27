@@ -3170,15 +3170,26 @@ async function generateTemplateCard(doc, cfg) {
             targetedTokens = canvas.tokens.placeables.filter(t => {
                 const templateObj = doc.object || canvas.templates.get(doc.id);
                 
+                // 1. STANDARD PIXI CHECK (If the local client rendered it in time)
                 if (templateObj && templateObj.shape) {
                     return templateObj.shape.contains(t.center.x - doc.x, t.center.y - doc.y);
                 }
                 
+                // 2. SERVER LATENCY FALLBACK (Rescues server-drawn Circles/Emanations)
                 if (doc.t === "circle" && doc.distance) {
-                    const radiusPixels = (doc.distance / canvas.dimensions.distance) * canvas.dimensions.size;
-                    const dx = t.center.x - doc.x;
-                    const dy = t.center.y - doc.y;
-                    return Math.hypot(dx, dy) <= radiusPixels;
+                    const gridSize = canvas.dimensions.size;
+                    const radiusPixels = (doc.distance / canvas.dimensions.distance) * gridSize;
+                    
+                    // Measure to the closest edge of the token's bounding box, NOT the center
+                    const tX = t.document.x;
+                    const tY = t.document.y;
+                    const tW = (t.document.width || 1) * gridSize;
+                    const tH = (t.document.height || 1) * gridSize;
+                    
+                    const closestX = Math.max(tX, Math.min(doc.x, tX + tW));
+                    const closestY = Math.max(tY, Math.min(doc.y, tY + tH));
+                    
+                    return Math.hypot(doc.x - closestX, doc.y - closestY) <= radiusPixels;
                 }
                 
                 return false;
