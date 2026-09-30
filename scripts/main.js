@@ -3223,7 +3223,26 @@ async function generateTemplateCard(doc, cfg) {
         if (targetedTokens.length === 0) { 
             ui.notifications.info("AoE Easy Resolve | No targets initially caught or selected."); 
             if (!shouldLinger && doc) {
-                setTimeout(async () => { try { await doc.delete(); } catch(e) {} }, 100);
+                const docName = doc.documentName === "Region" ? "Region" : "Template";
+                const deleteCb = async () => { 
+                    try { await doc.delete(); ui.notifications.info(`AoE Easy Resolve | ${docName} removed.`); } catch(e) { console.error(e); } 
+                };
+
+                if (foundry.applications?.api?.DialogV2) {
+                   foundry.applications.api.DialogV2.confirm({
+                       window: { title: `Remove ${docName}?` },
+                       content: `<p>No targets were caught. Do you want to remove the empty ${docName.toLowerCase()} from the canvas?</p>`,
+                       yes: { callback: deleteCb }
+                   });
+                } else {
+                   new Dialog({
+                     title: `Remove ${docName}?`, content: `<p>No targets were caught. Do you want to remove the empty ${docName.toLowerCase()} from the canvas?</p>`,
+                     buttons: {
+                       yes: { icon: '<i class="fas fa-trash"></i>', label: "Yes", callback: deleteCb },
+                       no: { icon: '<i class="fas fa-times"></i>', label: "No" }
+                     }, default: "yes"
+                   }).render(true);
+                }
             }
             return; 
         }
