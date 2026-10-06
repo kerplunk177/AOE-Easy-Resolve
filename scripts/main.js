@@ -278,6 +278,7 @@ Hooks.once("setup", () => {
 });
 
 Hooks.on("preCreateChatMessage", (message, data, options, userId) => {
+    if (game.settings.get(MODULE_ID, "disableAutomation")) return;
     if (window.aoeEasyResolveRollingDamage && message.isAuthor) {
         if (message.rolls?.length > 0 || (message.flags?.pf2e?.context?.type || "").includes("damage")) {
             window.aoeEasyResolveDamageRollData = {
@@ -788,14 +789,24 @@ Hooks.once("init", async function () {
 
     
 
+    game.settings.register(MODULE_ID, "disableAutomation", {
+        name: "AOE.Config.DisableAutomationName",
+        hint: "AOE.Config.DisableAutomationHint",
+        scope: "world",
+        config: true,
+        type: Boolean,
+        default: false
+    });
+
     game.settings.register(MODULE_ID, "defaultToWizard", {
-        name: "Default Config to Wizard",
-        hint: "When opening the item config, default to the guided Wizard setup instead of the Advanced Tab.",
+        name: "AOE.Config.DefaultToWizardName",
+        hint: "AOE.Config.DefaultToWizardHint",
         scope: "client",
         config: true,
         type: Boolean,
         default: true
     });
+
     loadTemplates([`modules/${MODULE_ID}/templates/chat-card.hbs`, `modules/${MODULE_ID}/templates/item-config.hbs`]);
 });
 
@@ -1325,6 +1336,7 @@ Hooks.on("renderItemSheet", async (app, html, data) => {
 
 // --- CHAT MESSAGE ROUTER & AUTO-APPLY ---
 Hooks.on("createChatMessage", async (message, options, userId) => {
+    if (game.settings.get(MODULE_ID, "disableAutomation")) return;
     const flags = message.flags[MODULE_ID];
 
     if (message.isAuthor) {
@@ -3379,6 +3391,7 @@ async function generateTemplateCard(doc, cfg) {
 
 // --- TEMPLATE CONVERSION ENGINE TRIGGER ---
 const executeShapeProcessing = async (doc) => {
+    if (game.settings.get(MODULE_ID, "disableAutomation")) return;
     setTimeout(async () => {
         try {
             let cache = window.aoeEasyResolveCache;

@@ -61,7 +61,11 @@
         "AdvancedWarning": "Mode Avancé Requis : Les jets réactifs nécessitent le Moteur de Règles dans l'onglet Avancé.",
         "TabBlast": "Frappe & Calculs",
         "TabZone": "Environnement",
-        "TabRules": "Moteur de Règles"
+        "TabRules": "Moteur de Règles",
+        "DefaultToWizardName": "Configuration par défaut sur l'Assistant",
+      "DefaultToWizardHint": "Lors de l'ouverture de la configuration de l'objet, le mode Assistant est activé par défaut au lieu de l'onglet Avancé.",
+        "DisableAutomationName": "Désactiver l'automatisation (Interrupteur Global)",
+      "DisableAutomationHint": "Désactive complètement l'automatisation d'AoE Easy Resolve. Utile si un autre module le requiert comme dépendance mais que vous ne souhaitez pas qu'il modifie vos jets et cartes de discussion."
       }
     }
   }

@@ -61,7 +61,11 @@
         "AdvancedWarning": "Modo Avanzado Requerido: Las salvaciones reactivas requieren el Motor de Reglas en la pestaña Avanzada.",
         "TabBlast": "Daño y Cálculos",
         "TabZone": "Entorno",
-        "TabRules": "Motor de Reglas"
+        "TabRules": "Motor de Reglas",
+        "DefaultToWizardName": "Configuración predeterminada al Asistente",
+      "DefaultToWizardHint": "Al abrir la configuración del objeto, muestra el Asistente de Efectos por defecto en lugar de la pestaña Avanzada.",
+        "DisableAutomationName": "Desactivar Automatización (Interruptor Global)",
+      "DisableAutomationHint": "Desactiva por completo la automatización de AoE Easy Resolve. Útil si otro módulo lo requiere como dependencia pero no deseas que interfiera con las cartas de chat o tiradas."
       }
     }
   }

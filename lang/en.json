@@ -61,7 +61,11 @@
         "AdvancedWarning": "Advanced Mode Required: Setting up 'Reactive Saves' requires the Rules Engine on the Advanced Tab.",
         "TabBlast": "Blast & Math",
         "TabZone": "Environment",
-        "TabRules": "Rules Engine"
+        "TabRules": "Rules Engine",
+        "DisableAutomationName": "Global Kill Switch (Disable Automation)",
+      "DisableAutomationHint": "Completely turns off AoE Easy Resolve's automation. Useful if another module requires it as a dependency but you do not want it intercepting chat cards or rolls.",
+      "DefaultToWizardName": "Default Config to Wizard",
+      "DefaultToWizardHint": "When opening the item config, default to the guided Wizard setup instead of the Advanced Tab."
       }
     }
   }
