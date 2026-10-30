@@ -37,6 +37,7 @@
                                 <option value="circle" {{#if isCircle}}selected{{/if}}>Burst</option>
                                 <option value="cone" {{#if isCone}}selected{{/if}}>Cone</option>
                                 <option value="ray" {{#if isRay}}selected{{/if}}>Line</option>
+                                <option value="emanation" {{#if isEmanation}}selected{{/if}}>Emanation</option>
                             </select>
                             <input type="number" name="flags.aoe-easy-resolve.templateDistance" value="{{templateDistance}}" placeholder="15" style="flex: 1; text-align: center; padding: 4px;">
                             <span style="font-weight: bold; color: #555;">ft.</span>
@@ -48,6 +49,31 @@
                         <label style="font-weight: bold; flex: 0 0 180px;">{{localize "AOE.Config.MaxSquares"}}</label>
                         <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
                             <input type="number" name="flags.aoe-easy-resolve.tacticalBlocks" value="{{tacticalBlocks}}" placeholder="e.g. 4" style="flex: 1; text-align: center; padding: 4px;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="aer-sub-settings" style="margin-top: 12px; padding: 10px 15px; display: flex; flex-direction: column; gap: 8px;">
+                    <div class="form-group" style="margin-bottom: 0; align-items: center;">
+                        <label style="font-weight: bold; flex: 0 0 180px;">Exclude Origin Caster?</label>
+                        <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.excludeCaster" {{checked excludeCaster}} style="width: 18px; height: 18px;">
+                            <span class="aer-notes" style="margin: 0;">Skips the casting token on Emanations / Auras</span>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; align-items: center;">
+                        <label style="font-weight: bold; flex: 0 0 180px;">Vertical Height (ft.)</label>
+                        <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
+                            <input type="number" name="flags.aoe-easy-resolve.zoneHeight" value="{{zoneHeight}}" placeholder="Infinite" style="flex: 0 0 80px; text-align: center; padding: 4px;">
+                            <span class="aer-notes" style="margin: 0;">Ignores tokens flying above this height</span>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; align-items: center;">
+                        <label style="font-weight: bold; flex: 0 0 180px;">Custom Effect Color?</label>
+                        <div class="form-fields" style="display: flex; gap: 10px; align-items: center;">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.useCustomColor" {{checked useCustomColor}} style="width: 18px; height: 18px;">
+                            <input type="color" class="wizard-color-picker" name="flags.aoe-easy-resolve.customColor" value="{{customColor}}" style="flex: 0 0 60px; height: 28px; padding: 0; border: 1px solid var(--aer-border); border-radius: 4px; cursor: pointer; display: {{#if useCustomColor}}inline-block{{else}}none{{/if}};">
+                            <span class="aer-notes" style="margin: 0;">Defaults to Player Color if unchecked</span>
                         </div>
                     </div>
                 </div>
@@ -258,14 +284,14 @@
             <!-- TAB 1: BLAST & MATH -->
             <div class="tab" data-tab="blast">
                 <div class="form-group" style="align-items: center;">
-                <label style="font-weight: bold; flex: 0 0 160px;">Override System Save?</label>
-                <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
-                    <input type="checkbox" name="flags.aoe-easy-resolve.useOverride" {{checked useOverride}}>
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.9em; border-left: 1px solid var(--aer-border); padding-left: 15px;">
-                        <input type="checkbox" name="flags.aoe-easy-resolve.isBasicSave" {{checked isBasicSave}}> Basic Save Math?
-                    </label>
+                    <label style="font-weight: bold; flex: 0 0 160px;">Override System Save?</label>
+                    <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.useOverride" {{checked useOverride}}>
+                        <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 0.9em; border-left: 1px solid var(--aer-border); padding-left: 15px;">
+                            <input type="checkbox" name="flags.aoe-easy-resolve.isBasicSave" {{checked isBasicSave}}> Basic Save Math?
+                        </label>
+                    </div>
                 </div>
-            </div>
                 <div class="form-group">
                     <label>Save Type</label>
                     <div class="form-fields">
@@ -288,6 +314,19 @@
                         <input type="number" name="flags.aoe-easy-resolve.saveDC" value="{{saveDC}}" placeholder="e.g. 20" style="flex: 0 0 60px; text-align: center;" />
                     </div>
                 </div>
+                <div class="form-group">
+                    <label title="Damage multipliers per degree of success">Save Multipliers</label>
+                    <div class="form-fields" style="display: flex; gap: 6px; align-items: center; font-size: 0.85em;">
+                        <span>CS:</span>
+                        <input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalSuccess" value="{{multipliers.criticalSuccess}}" placeholder="0" style="width: 45px; text-align: center;">
+                        <span>S:</span>
+                        <input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.success" value="{{multipliers.success}}" placeholder="0.5" style="width: 45px; text-align: center;">
+                        <span>F:</span>
+                        <input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.failure" value="{{multipliers.failure}}" placeholder="1" style="width: 45px; text-align: center;">
+                        <span>CF:</span>
+                        <input type="number" step="0.5" name="flags.aoe-easy-resolve.multipliers.criticalFailure" value="{{multipliers.criticalFailure}}" placeholder="2" style="width: 45px; text-align: center;">
+                    </div>
+                </div>
 
                 <hr style="margin: 15px 0;">
                 <p class="aer-notes" style="font-weight: bold;">Geometry & Targeting</p>
@@ -304,6 +343,7 @@
                             <option value="cone" {{#if isCone}}selected{{/if}}>Cone</option>
                             <option value="circle" {{#if isCircle}}selected{{/if}}>Burst</option>
                             <option value="ray" {{#if isRay}}selected{{/if}}>Line</option>
+                            <option value="emanation" {{#if isEmanation}}selected{{/if}}>Emanation</option>
                         </select>
                         <input type="number" name="flags.aoe-easy-resolve.templateDistance" value="{{templateDistance}}" placeholder="ft." style="width: 50%;">
                     </div>
@@ -319,6 +359,20 @@
                     <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
                         <input type="checkbox" name="flags.aoe-easy-resolve.tacticalDrawing" {{checked tacticalDrawing}}>
                         <input type="number" name="flags.aoe-easy-resolve.tacticalBlocks" value="{{tacticalBlocks}}" placeholder="Max Squares (e.g. 4)" style="width: 150px; padding: 4px; text-align: center;">
+                    </div>
+                </div>
+                <div class="form-group" style="align-items: center;">
+                    <label style="font-weight: bold; flex: 0 0 200px;">Exclude Caster / Height (ft.)</label>
+                    <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.excludeCaster" {{checked excludeCaster}} title="Exclude Origin Caster">
+                        <input type="number" name="flags.aoe-easy-resolve.zoneHeight" value="{{zoneHeight}}" placeholder="Height in ft. (e.g. 10)" style="width: 150px; padding: 4px; text-align: center;">
+                    </div>
+                </div>
+                <div class="form-group" style="align-items: center;">
+                    <label style="font-weight: bold; flex: 0 0 200px;">Custom Effect Color?</label>
+                    <div class="form-fields" style="display: flex; align-items: center; gap: 15px;">
+                        <input type="checkbox" name="flags.aoe-easy-resolve.useCustomColor" {{checked useCustomColor}}>
+                        <input type="color" name="flags.aoe-easy-resolve.customColor" value="{{customColor}}" style="width: 60px; height: 26px; padding: 0; border: 1px solid var(--aer-border); border-radius: 4px; cursor: pointer;">
                     </div>
                 </div>
 
