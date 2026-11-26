@@ -120,6 +120,133 @@ const renderHBS = async (templatePath, data) => {
     return await renderTemplate(templatePath, data);
 };
 
+// Wraps a Macro document so downstream DC, scaling, and rule helpers can treat it like an Item
+function wrapOriginDoc(doc, explicitActor = null) {
+    if (!doc || doc.documentName !== "Macro") return doc;
+    const resolvedActor = explicitActor || canvas.tokens?.controlled?.[0]?.actor || game.user.character || null;
+    return new Proxy(doc, {
+        get(target, prop) {
+            if (prop === "actor") return resolvedActor;
+            if (prop === "getRollData") return () => resolvedActor?.getRollData?.() || {};
+            if (prop === "system") return { level: { value: resolvedActor?.level || 1 }, traits: { value: [] } };
+            const val = Reflect.get(target, prop, target);
+            return typeof val === "function" ? val.bind(target) : val;
+        }
+    });
+}
+
+async function resolveOriginUuid(uuid) {
+    if (!uuid) return null;
+    try {
+        const doc = await fromUuid(uuid);
+        return wrapOriginDoc(doc);
+    } catch (e) {
+        return null;
+    }
+}
+
+function startTacticalStampMode(originDoc, flags, castLevel = 1) {
+    const limit = parseInt(flags.tacticalBlocks) || 4;
+    let shapes = [];
+
+    ui.notifications.info(`AoE Easy Resolve | STAMP MODE: Click grid squares to stamp up to ${limit} squares. Right-click to finish early.`);
+    canvas.regions.activate();
+
+    const ghostContainer = new PIXI.Container();
+    canvas.interface.addChild(ghostContainer);
+
+    const size = canvas.dimensions.size;
+    const activeColor = (flags.useCustomColor && flags.customColor) ? flags.customColor : (game.user.color?.css || game.user.color || "#ff0000");
+    const numColor = Color.from(activeColor).valueOf();
+
+    const hoverCursor = new PIXI.Graphics();
+    hoverCursor.beginFill(numColor, 0.15);
+    hoverCursor.lineStyle(2, numColor, 0.4);
+    hoverCursor.drawRect(0, 0, size, size);
+    hoverCursor.endFill();
+    ghostContainer.addChild(hoverCursor);
+
+    const finishStamping = async () => {
+        canvas.app.stage.off('pointerdown', onStampClick);
+        canvas.app.stage.off('pointermove', onStampMove);
+        if (!ghostContainer.destroyed) ghostContainer.destroy({ children: true });
+
+        if (shapes.length > 0) {
+            await canvas.scene.createEmbeddedDocuments("Region", [{
+                name: `${originDoc?.name || "Hazard"} Zone`,
+                color: activeColor,
+                highlightMode: "coverage",
+                shapes: shapes,
+                elevation: { bottom: -1000, top: 1000 },
+                flags: { pf2e: { origin: { uuid: originDoc?.uuid, castLevel: castLevel } } }
+            }]);
+        } else {
+            ui.notifications.warn("AoE Easy Resolve | Stamping cancelled (no squares placed).");
+        }
+    };
+
+    const getSnappedPosition = (pos) => {
+        try {
+            if (canvas.grid.getTopLeftPoint) {
+                const pt = canvas.grid.getTopLeftPoint(pos);
+                return { sx: pt.x, sy: pt.y };
+            } else {
+                const rc = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
+                const pt = canvas.grid.grid.getPixelsFromGridPosition(rc[0], rc[1]);
+                return { sx: pt[0], sy: pt[1] };
+            }
+        } catch (e) {
+            return { sx: Math.floor(pos.x / size) * size, sy: Math.floor(pos.y / size) * size };
+        }
+    };
+
+    const onStampMove = (event) => {
+        if (!canvas.ready || ghostContainer.destroyed) {
+            canvas.app.stage.off('pointerdown', onStampClick);
+            canvas.app.stage.off('pointermove', onStampMove);
+            return;
+        }
+        const pos = event.data.getLocalPosition(canvas.interface);
+        const { sx, sy } = getSnappedPosition(pos);
+
+        hoverCursor.x = sx;
+        hoverCursor.y = sy;
+        hoverCursor.alpha = shapes.some(s => s.x === sx && s.y === sy) ? 0 : 1;
+    };
+
+    const onStampClick = async (event) => {
+        if (!canvas.ready || ghostContainer.destroyed) {
+            canvas.app.stage.off('pointerdown', onStampClick);
+            canvas.app.stage.off('pointermove', onStampMove);
+            return;
+        }
+        if (event.data.button === 2) return finishStamping();
+        if (event.data.button !== 0) return;
+
+        const pos = event.data.getLocalPosition(canvas.interface);
+        const { sx, sy } = getSnappedPosition(pos);
+
+        if (shapes.some(s => s.x === sx && s.y === sy)) return;
+
+        shapes.push({ type: "rectangle", x: sx, y: sy, width: size, height: size });
+
+        const g = new PIXI.Graphics();
+        g.beginFill(numColor, 0.4);
+        g.lineStyle(2, numColor, 0.8);
+        g.drawRect(sx, sy, size, size);
+        g.endFill();
+        ghostContainer.addChild(g);
+        ghostContainer.addChild(hoverCursor);
+
+        if (shapes.length >= limit) finishStamping();
+    };
+
+    setTimeout(() => {
+        canvas.app.stage.on('pointerdown', onStampClick);
+        canvas.app.stage.on('pointermove', onStampMove);
+    }, 100);
+}
+
 Hooks.once("setup", () => {
     const module = game.modules.get(MODULE_ID);
 
@@ -194,6 +321,91 @@ Hooks.once("setup", () => {
             console.log(`AoE Easy Resolve | Damage Roll UI Updated Successfully.`);
         },
 
+        triggerMacro: async function(macroOrUuid) {
+            const macro = typeof macroOrUuid === "string" ? await fromUuid(macroOrUuid) : macroOrUuid;
+            if (!macro) {
+                return ui.notifications.error("AoE Easy Resolve | Could not locate Macro document.");
+            }
+
+            const flags = macro.flags?.[MODULE_ID] || {};
+            const originDoc = wrapOriginDoc(macro);
+            const castLevel = originDoc.actor?.level || 1;
+
+            const finalDC = flags.useOverride ? getSystemSaveDC(originDoc, flags.dcType, flags.saveDC) : null;
+            const finalType = flags.useOverride ? (flags.saveType || "reflex") : "reflex";
+
+            if (!flags.provideTemplate && !flags.enableMultiTarget && !flags.tacticalDrawing) {
+                ui.notifications.warn("AoE Easy Resolve | No targeting mode configured on this macro yet. Opening Wizard...");
+                return AoEItemConfigApp.show(macro);
+            }
+
+            window.aoeEasyResolveCache = {
+                item: originDoc,
+                name: macro.name,
+                dc: finalDC,
+                type: finalType,
+                hazardDuration: flags.hazardDuration || null,
+                originMessageId: null,
+                castLevel: castLevel
+            };
+
+            if (flags.enableMultiTarget) {
+                const targets = Array.from(game.user.targets);
+                if (targets.length === 0) {
+                    window.aoeEasyResolveCache = null;
+                    return ui.notifications.warn("AoE Easy Resolve | You must target tokens on the canvas first!");
+                }
+                await generateTemplateCard(null, {
+                    itemName: macro.name,
+                    saveType: finalType,
+                    saveDC: finalDC,
+                    isBasicSave: flags.isBasicSave ?? true,
+                    originItem: originDoc,
+                    hazardDamage: flags.hazardDamage || null,
+                    hazardDuration: flags.hazardDuration || null,
+                    originMessageId: null,
+                    castLevel: castLevel,
+                    preselectedTargets: targets
+                });
+                return;
+            }
+
+            if (flags.tacticalDrawing) {
+                const parsedBlocks = parseInt(flags.tacticalBlocks);
+                if (!isNaN(parsedBlocks) && parsedBlocks > 0) {
+                    startTacticalStampMode(originDoc, flags, castLevel);
+                } else {
+                    canvas.regions.activate();
+                    setTimeout(() => {
+                        if (typeof ui.controls?.initialize === "function") {
+                            ui.controls.initialize({ control: "regions", tool: "grid" });
+                        }
+                    }, 100);
+                    ui.notifications.info("AoE Easy Resolve | Click grid squares to paint the AoE, then double-click to finish.");
+                }
+                return;
+            }
+
+            if (flags.provideTemplate) {
+                const rawShape = flags.templateType || "circle";
+                const shapeMap = { circle: "burst", burst: "burst", cone: "cone", ray: "line", line: "line", emanation: "emanation" };
+                const shapeType = shapeMap[rawShape] || "burst";
+                const targetDistance = flags.templateDistance || 15;
+
+                await ChatMessage.create({
+                    speaker: ChatMessage.getSpeaker(),
+                    whisper: [game.user.id],
+                    content: `<div class="aer-macro-launcher">@Template[type:${shapeType}|distance:${targetDistance}]</div>`,
+                    flags: {
+                        [MODULE_ID]: {
+                            isMacroLauncher: true,
+                            macroUuid: macro.uuid
+                        }
+                    }
+                });
+            }
+        },
+
         handleRegionEvent: async (regionEvent, originItemUuid) => {
             if (!game.user.isGM) return;
             const activeGM = game.users.activeGM;
@@ -240,7 +452,7 @@ Hooks.once("setup", () => {
                 }
             }
 
-            const originItem = await fromUuid(originItemUuid);
+            const originItem = await resolveOriginUuid(originItemUuid);
             if (!originItem) return;
             
             await executeEffectRules([{ actor: tokenDoc.actor, id: tokenDoc.id, document: tokenDoc }], moduleContext, "always", originItem, originItem.actor, regionDoc);
@@ -809,10 +1021,15 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications?.api 
 class AoEItemConfigApp extends HandlebarsApplicationMixin(ApplicationV2) {
     static instances = new Map();
 
-    constructor(item) {
-        super({ id: `aoe-config-${item.id}` });
-        this.item = item;
-        AoEItemConfigApp.instances.set(item.uuid, this);
+    constructor(doc) {
+        super({ id: `aoe-config-${doc.id}` });
+        this.doc = doc;
+        this.item = doc;
+        AoEItemConfigApp.instances.set(doc.uuid, this);
+    }
+
+    get title() {
+        return `AoE Config: ${this.doc?.name || "Effect"}`;
     }
 
     static DEFAULT_OPTIONS = {
@@ -1156,8 +1373,21 @@ class AoEItemConfigApp extends HandlebarsApplicationMixin(ApplicationV2) {
         aoeFlags.useCustomColor = !!aoeFlags.useCustomColor;
         aoeFlags.customColor = aoeFlags.customColor || existingFlags.customColor || "#ff5500";
         
-        await this.item.update({ [`flags.${MODULE_ID}`]: aoeFlags });
-        ui.notifications.success("AoE Easy Resolve | Configuration Saved.");
+        if (this.doc.documentName === "Macro") {
+            const macroUpdate = {
+                [`flags.${MODULE_ID}`]: aoeFlags,
+                type: "script",
+                command: `// Managed by AoE Easy Resolve (Edit via the AoE Wizard button)\nconst self = (this?.documentName === "Macro") ? this : await fromUuid("${this.doc.uuid}");\ngame.modules.get("${MODULE_ID}")?.api?.triggerMacro(self);`
+            };
+            if (!this.doc.img || this.doc.img === "icons/svg/dice-target.svg" || this.doc.img === "icons/svg/d20-black.svg") {
+                macroUpdate.img = "icons/svg/target.svg";
+            }
+            await this.doc.update(macroUpdate);
+            ui.notifications.success(`AoE Easy Resolve | Macro "${this.doc.name}" Saved.`);
+        } else {
+            await this.doc.update({ [`flags.${MODULE_ID}`]: aoeFlags });
+            ui.notifications.success("AoE Easy Resolve | Configuration Saved.");
+        }
     }
 
     async _onAddRule(event, target) {
@@ -1278,7 +1508,7 @@ class AoEItemConfigApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 }
 
-// --- ITEM SHEET INJECTION (THE CLEAN ENTRY POINTS) ---
+// --- ITEM & MACRO SHEET INJECTION (THE CLEAN ENTRY POINTS) ---
 Hooks.on("getItemSheetHeaderButtons", (app, buttons) => {
     if (!["spell", "feat", "action", "consumable", "weapon", "equipment", "melee"].includes(app.item.type)) return;
     buttons.unshift({
@@ -1286,6 +1516,54 @@ Hooks.on("getItemSheetHeaderButtons", (app, buttons) => {
         class: "aoe-config-header-btn",
         icon: "fas fa-bullseye",
         onclick: () => AoEItemConfigApp.show(app.item)
+    });
+});
+
+Hooks.on("renderMacroConfig", (app, element) => {
+    const el = element instanceof HTMLElement ? element : element?.[0];
+    if (!el || el.querySelector(".aer-macro-wizard-btn")) return;
+
+    const macro = app.document || app.object;
+    if (!macro) return;
+
+    const isConfigured = !!(macro.flags?.[MODULE_ID]?.provideTemplate || macro.flags?.[MODULE_ID]?.enableMultiTarget || macro.flags?.[MODULE_ID]?.tacticalDrawing);
+    const btnLabel = isConfigured ? "Edit AoE Wizard" : "AoE Wizard";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "aer-macro-wizard-btn";
+    btn.style.cssText = "flex: 0 0 auto; width: auto; padding: 0 10px; background: var(--aer-accent-purple, #9b59b6); color: white; border: 1px solid rgba(255,255,255,0.2); margin-left: 6px; cursor: pointer;";
+    btn.innerHTML = `<i class="fas fa-bullseye"></i> ${btnLabel}`;
+
+    const typeSelect = el.querySelector('select[name="type"]');
+    if (typeSelect?.parentElement) {
+        typeSelect.parentElement.appendChild(btn);
+    } else {
+        const form = el.querySelector("form") || el;
+        form.prepend(btn);
+    }
+
+    btn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        const formName = el.querySelector('input[name="name"]')?.value?.trim();
+        const formImg = el.querySelector('[name="img"]')?.value?.trim();
+
+        let targetMacro = macro;
+        if (!targetMacro.id || !game.macros.has(targetMacro.id)) {
+            const createData = targetMacro.toObject();
+            if (formName) createData.name = formName;
+            if (formImg) createData.img = formImg;
+            createData.type = "script";
+            targetMacro = await Macro.create(createData);
+        } else {
+            let quickUpdates = {};
+            if (formName && formName !== targetMacro.name) quickUpdates.name = formName;
+            if (formImg && formImg !== targetMacro.img) quickUpdates.img = formImg;
+            if (Object.keys(quickUpdates).length > 0) await targetMacro.update(quickUpdates);
+        }
+
+        await app.close();
+        AoEItemConfigApp.show(targetMacro);
     });
 });
 
@@ -1525,6 +1803,24 @@ Hooks.on("createChatMessage", async (message, options, userId) => {
 
 // --- CHAT CARD INTERACTIVITY ---
 Hooks.on("renderChatMessageHTML", (message, html, data) => {
+    if (message.getFlag(MODULE_ID, "isMacroLauncher")) {
+        const $msgEl = html instanceof jQuery ? html : $(html);
+        $msgEl.hide();
+        if (message.isAuthor && !message._aerLauncherFired) {
+            message._aerLauncherFired = true;
+            setTimeout(() => {
+                const macroBtn = $msgEl.find(".aer-macro-launcher a, .aer-macro-launcher button, .aer-macro-launcher [data-pf2-action]").first()[0];
+                if (macroBtn) {
+                    macroBtn.dispatchEvent(new MouseEvent("click", { view: window, bubbles: true, cancelable: true }));
+                } else {
+                    ui.notifications.warn("AoE Easy Resolve | Could not trigger template placement from macro.");
+                }
+                setTimeout(async () => { try { await message.delete(); } catch (e) {} }, 150);
+            }, 50);
+        }
+        return;
+    }
+
     const item = message.item;
     const flags = item?.flags[MODULE_ID] || {};
 
@@ -1637,113 +1933,8 @@ Hooks.on("renderChatMessageHTML", (message, html, data) => {
             $html.find(".er-draw-rect-btn").off("click").on("click", async (ev) => {
                 ev.preventDefault();
                 prepCache();
-                
-                const limit = parseInt(flags.tacticalBlocks) || 4;
-                let shapes = [];
-                
-                ui.notifications.info(`AoE Easy Resolve | STAMP MODE: Click grid squares to stamp up to ${limit} squares. Right-click to finish early.`);
-                canvas.regions.activate();
-                
-                const ghostContainer = new PIXI.Container();
-                canvas.interface.addChild(ghostContainer);
-                
-                const size = canvas.dimensions.size;
-                const activeColor = (flags.useCustomColor && flags.customColor) ? flags.customColor : (game.user.color?.css || game.user.color || "#ff0000");
-                const numColor = Color.from(activeColor).valueOf();
-      
-                // THE UPGRADE: The Hover Cursor
-                const hoverCursor = new PIXI.Graphics();
-                hoverCursor.beginFill(numColor, 0.15); // Faint fill
-                hoverCursor.lineStyle(2, numColor, 0.4); // Faint border
-                hoverCursor.drawRect(0, 0, size, size);
-                hoverCursor.endFill();
-                ghostContainer.addChild(hoverCursor);
-                
-                const finishStamping = async () => {
-                    canvas.app.stage.off('pointerdown', onStampClick);
-                    canvas.app.stage.off('pointermove', onStampMove); // Kill the tracker
-                    ghostContainer.destroy({ children: true });
-                    
-                    if (shapes.length > 0) {
-                        const castLevel = message.flags?.pf2e?.origin?.castLevel || item?.system?.level?.value || 1;
-                        await canvas.scene.createEmbeddedDocuments("Region", [{
-                            name: `${item?.name || "Hazard"} Zone`,
-                            color: activeColor,
-                            highlightMode: "coverage",
-                            shapes: shapes,
-                            elevation: { bottom: -1000, top: 1000 },
-                            flags: { pf2e: { origin: { uuid: item?.uuid, castLevel: castLevel } } }
-                        }]);
-                    } else {
-                        ui.notifications.warn("AoE Easy Resolve | Stamping cancelled (no squares placed).");
-                    }
-                };
-                
-                // Abstracted the grid snapping so both listeners can use it
-                const getSnappedPosition = (pos) => {
-                    try {
-                        if (canvas.grid.getTopLeftPoint) {
-                            const pt = canvas.grid.getTopLeftPoint(pos);
-                            return { sx: pt.x, sy: pt.y };
-                        } else {
-                                const rc = canvas.grid.grid.getGridPositionFromPixels(pos.x, pos.y);
-                                const pt = canvas.grid.grid.getPixelsFromGridPosition(rc[0], rc[1]);
-                                return { sx: pt[0], sy: pt[1] };
-                        }
-                    } catch(e) {
-                        return { sx: Math.floor(pos.x / size) * size, sy: Math.floor(pos.y / size) * size };
-                    }
-                };
-      
-                const onStampMove = (event) => {
-                    if (!canvas.ready || ghostContainer.destroyed) {
-                        canvas.app.stage.off('pointerdown', onStampClick);
-                        canvas.app.stage.off('pointermove', onStampMove);
-                        return;
-                    }
-                    const pos = event.data.getLocalPosition(canvas.interface);
-                    const { sx, sy } = getSnappedPosition(pos);
-                    
-                    hoverCursor.x = sx;
-                    hoverCursor.y = sy;
-                    
-                    // Hide the hover cursor if we are hovering over an already-stamped square
-                    if (shapes.some(s => s.x === sx && s.y === sy)) {
-                        hoverCursor.alpha = 0;
-                    } else {
-                        hoverCursor.alpha = 1;
-                    }
-                };
-      
-                const onStampClick = async (event) => {
-                    if (event.data.button === 2) return finishStamping(); // Right-click finishes early
-                    if (event.data.button !== 0) return; // Ignore middle-clicks
-                    
-                    const pos = event.data.getLocalPosition(canvas.interface);
-                    const { sx, sy } = getSnappedPosition(pos);
-                    
-                    if (shapes.some(s => s.x === sx && s.y === sy)) return;
-                    
-                    shapes.push({ type: "rectangle", x: sx, y: sy, width: size, height: size });
-                    
-                    // Draw the permanent stamped square
-                    const g = new PIXI.Graphics();
-                    g.beginFill(numColor, 0.4);
-                    g.lineStyle(2, numColor, 0.8);
-                    g.drawRect(sx, sy, size, size);
-                    g.endFill();
-                    ghostContainer.addChild(g);
-                    
-                    // Keep hover cursor on top of the newly dropped graphic
-                    ghostContainer.addChild(hoverCursor); 
-      
-                    if (shapes.length >= limit) finishStamping();
-                };
-                
-                setTimeout(() => {
-                    canvas.app.stage.on('pointerdown', onStampClick);
-                    canvas.app.stage.on('pointermove', onStampMove);
-                }, 100);
+                const castLevel = message.flags?.pf2e?.origin?.castLevel || item?.system?.level?.value || 1;
+                startTacticalStampMode(item, flags, castLevel);
             });
 
             // --- MULTI-TARGET RESOLUTION LISTENER ---
@@ -1894,7 +2085,7 @@ $html.find('[data-token-id]:not(button):not(a)').each((i, el) => {
                 if (originMsg) originItem = originMsg.item;
             }
             if (!originItem && aoeData.itemUuid) {
-                try { originItem = await fromUuid(aoeData.itemUuid); } catch (e) {}
+                originItem = await resolveOriginUuid(aoeData.itemUuid); 
             }
             
             const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
@@ -1932,7 +2123,7 @@ $html.find('[data-token-id]:not(button):not(a)').each((i, el) => {
             if (originMsg) originItem = originMsg.item;
         }
         if (!originItem && aoeData.itemUuid) { 
-            try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {} 
+            originItem = await resolveOriginUuid(aoeData.itemUuid); 
         }
 
         const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
@@ -2268,7 +2459,7 @@ $html.find(".rescan-area-btn").off("click").on("click", async (event) => {
         if (originMsg) originItem = originMsg.item;
     }
     if (!originItem && aoeData.itemUuid) {
-        try { originItem = await fromUuid(aoeData.itemUuid); } catch (e) {}
+        originItem = await resolveOriginUuid(aoeData.itemUuid); 
     }
 
     const scannedTokens = getTokensInRegion(regionDoc, originItem);
@@ -2380,7 +2571,7 @@ $html.find(".add-targets-btn").off("click").on("click", async (event) => {
         if (originMsg) originItem = originMsg.item;
     }
     if (!originItem && aoeData.itemUuid) {
-        try { originItem = await fromUuid(aoeData.itemUuid); } catch (e) {}
+        originItem = await resolveOriginUuid(aoeData.itemUuid); 
     }
 
     const itemTraits = originItem?.system?.traits?.value || [];
@@ -2472,7 +2663,7 @@ $html.find(".add-targets-btn").off("click").on("click", async (event) => {
             if (originMsg) originItem = originMsg.item;
         }
         if (!originItem && aoeData.itemUuid) { 
-            try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {} 
+            originItem = await resolveOriginUuid(aoeData.itemUuid); 
         }
         
         const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
@@ -2550,7 +2741,7 @@ $html.find(".add-targets-btn").off("click").on("click", async (event) => {
             if (originMsg) originItem = originMsg.item;
         }
         if (!originItem && aoeData.itemUuid) { 
-            try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {} 
+            originItem = await resolveOriginUuid(aoeData.itemUuid); 
         }
         
         const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
@@ -2624,7 +2815,7 @@ $html.find(".add-targets-btn").off("click").on("click", async (event) => {
             if (originMsg) originItem = originMsg.item;
         }
         if (!originItem && aoeData.itemUuid) { 
-            try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {} 
+            originItem = await resolveOriginUuid(aoeData.itemUuid); 
         }
         
         const hasDamage = aoeData.hazardDamage || (originItem?.system?.damage && Object.keys(originItem.system.damage).length > 0);
@@ -2827,7 +3018,7 @@ $html.find(".add-targets-btn").off("click").on("click", async (event) => {
             if (originMsg) originItem = originMsg.item;
         }
         if (!originItem && aoeData.itemUuid) { 
-            try { originItem = await fromUuid(aoeData.itemUuid); } catch(e) {} 
+            originItem = await resolveOriginUuid(aoeData.itemUuid); 
         }
 
         const aoeFlags = originItem?.flags?.[MODULE_ID] || {};
@@ -3040,8 +3231,9 @@ $html.find(".add-targets-btn").off("click").on("click", async (event) => {
 
                                     try {
                                         if (token.actor.applyDamage) {
-                                            await token.actor.applyDamage({ damage: damageToApply, token: token.document, item: originItem, rollOptions: extraTraits });
-                                        } else { 
+                                            const pf2eOriginItem = originItem?.documentName === "Item" ? originItem : null;
+                                            await token.actor.applyDamage({ damage: damageToApply, token: token.document, item: pf2eOriginItem, rollOptions: extraTraits });
+                                        } else {
                                             throw new Error("PF2e applyDamage API not found on actor."); 
                                         }
                                     } catch (error) {
@@ -3721,6 +3913,7 @@ async function generateTemplateCard(doc, cfg) {
             saveType: payload.saveType,
             saveDC: payload.saveDC,
             noSave: payload.noSave,
+            templateId: doc ? doc.id : null,
             damageTotal: null
         }, game.user.isGM);
 
@@ -3763,7 +3956,7 @@ const executeShapeProcessing = async (doc) => {
             window.aoeEasyResolveCache = null; 
 
             if (!cache && doc.flags?.pf2e?.origin?.uuid) {
-                const originItem = await fromUuid(doc.flags.pf2e.origin.uuid);
+                const originItem = await resolveOriginUuid(doc.flags.pf2e.origin.uuid);
                 if (originItem) {
                     const aoeFlags = originItem.flags?.[MODULE_ID] || {};
                     let finalDC = aoeFlags.useOverride 
